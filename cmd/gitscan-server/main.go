@@ -101,7 +101,7 @@ func main() {
 	gitHandler := githttp.NewHandler(database, repoCache, scan, limiter, preflightChecker, queueManager, handlerCfg)
 
 	// Create web handler for marketing pages
-	webHandler, err := web.NewHandler()
+	webHandler, err := web.NewHandler(database)
 	if err != nil {
 		log.Fatalf("Failed to initialize web handler: %v", err)
 	}

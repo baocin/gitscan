@@ -256,3 +256,47 @@ func nullString(s string) interface{} {
 	}
 	return s
 }
+
+// ScanWithRepo represents a scan with its associated repo info
+type ScanWithRepo struct {
+	Scan
+	RepoURL string
+}
+
+// GetScanByCommitPrefix retrieves a scan by commit SHA prefix (for report URLs)
+func (db *DB) GetScanByCommitPrefix(commitPrefix string) (*ScanWithRepo, error) {
+	row := db.conn.QueryRow(`
+		SELECT s.id, s.repo_id, s.commit_sha, s.results_json, s.summary_json,
+		       s.critical_count, s.high_count, s.medium_count, s.low_count, s.info_count,
+		       s.files_scanned, s.scan_duration_ms, s.opengrep_version, s.rules_version, s.created_at,
+		       r.url
+		FROM scans s
+		JOIN repos r ON s.repo_id = r.id
+		WHERE s.commit_sha LIKE ?
+		ORDER BY s.created_at DESC
+		LIMIT 1
+	`, commitPrefix+"%")
+
+	var s ScanWithRepo
+	var summaryJSON sql.NullString
+	var filesScanned sql.NullInt64
+	var openGrepVer, rulesVer sql.NullString
+
+	err := row.Scan(&s.ID, &s.RepoID, &s.CommitSHA, &s.ResultsJSON, &summaryJSON,
+		&s.CriticalCount, &s.HighCount, &s.MediumCount, &s.LowCount, &s.InfoCount,
+		&filesScanned, &s.ScanDurationMS, &openGrepVer, &rulesVer, &s.CreatedAt,
+		&s.RepoURL)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	s.SummaryJSON = summaryJSON.String
+	s.FilesScanned = int(filesScanned.Int64)
+	s.OpenGrepVersion = openGrepVer.String
+	s.RulesVersion = rulesVer.String
+
+	return &s, nil
+}
