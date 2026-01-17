@@ -190,7 +190,7 @@ func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r
 // Returns true if the user cancelled (Ctrl+C)
 func (h *Handler) showPrivateRepoWarning(ctx context.Context, sb *SidebandWriter) bool {
 	report := NewReportWriter(sb)
-	boxWidth := 66
+	boxWidth := 80
 
 	sb.WriteEmptyLine()
 	report.WriteBoxTop(boxWidth)
@@ -246,7 +246,7 @@ func checkClientDisconnected(ctx context.Context) bool {
 // performScan fetches the repo, scans it, and writes results via sideband
 func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *ParsedPath, clientIP string, startTime time.Time, isPrivate bool, skipCache bool) {
 	report := NewReportWriter(sb)
-	boxWidth := 66
+	boxWidth := 80
 
 	sb.WriteEmptyLine()
 

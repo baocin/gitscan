@@ -18,7 +18,7 @@ func GenerateScaledQR(url string) []string {
 		}
 	}
 
-	// Disable the built-in border, we'll handle spacing ourselves
+	// Disable the built-in border, we'll handle quiet zones ourselves
 	qr.DisableBorder = true
 	bitmap := qr.Bitmap()
 
@@ -28,9 +28,13 @@ func GenerateScaledQR(url string) []string {
 
 	lines := []string{}
 
-	// Add top quiet zone (2 lines of spaces)
-	qrWidth := len(bitmap[0]) * 2 // 2 chars per module
+	// Quiet zone: 4 modules of white space on all sides (QR spec recommends 4)
+	// With 2 chars per module horizontally, that's 8 spaces on left/right
+	quietMargin := "        " // 8 spaces (4 modules * 2 chars)
+	qrWidth := len(bitmap[0])*2 + 16 // QR width + left/right quiet zones
 	quietLine := strings.Repeat(" ", qrWidth)
+
+	// Add top quiet zone (4 lines for 4 modules, since we render 2 rows per line)
 	lines = append(lines, quietLine)
 	lines = append(lines, quietLine)
 
@@ -38,6 +42,7 @@ func GenerateScaledQR(url string) []string {
 	// This gives us 2 vertical pixels per character line
 	for y := 0; y < len(bitmap); y += 2 {
 		var line strings.Builder
+		line.WriteString(quietMargin) // Left quiet zone
 
 		for x := 0; x < len(bitmap[y]); x++ {
 			top := bitmap[y][x]
@@ -60,12 +65,14 @@ func GenerateScaledQR(url string) []string {
 			}
 			line.WriteString(char)
 		}
+		line.WriteString(quietMargin) // Right quiet zone
 		lines = append(lines, line.String())
 	}
 
 	// Handle odd number of rows
 	if len(bitmap)%2 == 1 {
 		var line strings.Builder
+		line.WriteString(quietMargin) // Left quiet zone
 		y := len(bitmap) - 1
 		for x := 0; x < len(bitmap[y]); x++ {
 			if bitmap[y][x] {
@@ -74,6 +81,7 @@ func GenerateScaledQR(url string) []string {
 				line.WriteString("  ")
 			}
 		}
+		line.WriteString(quietMargin) // Right quiet zone
 		lines = append(lines, line.String())
 	}
 
