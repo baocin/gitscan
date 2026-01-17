@@ -961,6 +961,68 @@ services:
 
 ---
 
+## What Happens After the Report
+
+### Security Score (0-100)
+
+Provide a weighted overall security score:
+
+| Severity | Weight |
+|----------|--------|
+| Critical | 25 pts per finding (max 100 deduction) |
+| High     | 10 pts per finding (max 60 deduction) |
+| Medium   | 3 pts per finding (max 30 deduction)  |
+| Low      | 1 pt per finding (max 10 deduction)   |
+
+```
+Score = max(0, 100 - (critical_penalty + high_penalty + medium_penalty + low_penalty))
+```
+
+Display as: `Security Score: 73/100 ⭐⭐⭐☆☆`
+
+### Recommended Alternatives
+
+When a vulnerable package is found:
+- Suggest safer alternatives with their security scores
+- Show one-liner remediation commands
+
+```
+⚠ Found: lodash@3.10.1 (4 High vulnerabilities)
+✓ Alternative: lodash@4.17.21 (0 vulnerabilities)
+  Fix: npm install lodash@4.17.21
+
+⚠ Found: express@3.x (deprecated, 12 vulnerabilities)
+✓ Alternative: express@4.18.2 (0 vulnerabilities)
+  Fix: npm install express@4.18.2
+```
+
+### Auto-Clone for Clean Repos (Premium)
+
+If no issues are found:
+- Option to automatically complete the clone
+- No need to re-run with the original URL
+- Saves time for frequent scanners
+
+### Misspelled Repo Detection
+
+Detect common typosquatting patterns:
+```
+⚠ Did you mean github.com/facebook/react?
+  You requested: github.com/facebok/react
+
+⚠ This repo name is similar to a popular package.
+  Consider verifying you have the correct repository.
+```
+
+### Web Report Enhancements
+
+- Copy-to-clipboard button for clone command
+- One-click clone command generation
+- Download report as PDF/JSON
+- Share report link
+
+---
+
 ## Future Enhancements
 
 ### Phase 2
@@ -968,18 +1030,22 @@ services:
 - [ ] GitLab and Bitbucket support
 - [ ] Custom rule upload via web UI
 - [ ] Webhook notifications
+- [ ] Security score (0-100) with severity weighting
 
 ### Phase 3
 - [ ] PR comment integration (gitscan as GitHub Action)
 - [ ] Historical trend tracking
 - [ ] Organization dashboards
 - [ ] API for CI/CD integration
+- [ ] Alternative package recommendations
 
 ### Phase 4
 - [ ] Self-hosted option (Docker image)
 - [ ] IDE extensions (VS Code, JetBrains)
 - [ ] Dependency scanning (SCA)
 - [ ] License compliance checking
+- [ ] Typosquatting/misspelled repo detection
+- [ ] Auto-clone for clean repos (premium feature)
 
 ---
 
