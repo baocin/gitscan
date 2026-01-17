@@ -19,7 +19,7 @@ import (
 	"github.com/baocin/gitscan/internal/queue"
 	"github.com/baocin/gitscan/internal/ratelimit"
 	"github.com/baocin/gitscan/internal/scanner"
-	"github.com/baocin/gitscan/internal/web"
+	"github.com/baocin/gitscan/web"
 )
 
 // Version information (set at build time)
@@ -32,7 +32,7 @@ var (
 func main() {
 	// Parse command line flags
 	var (
-		listenAddr   = flag.String("listen", ":8080", "HTTP listen address")
+		listenAddr   = flag.String("listen", ":6633", "HTTP listen address")
 		tlsAddr      = flag.String("tls-listen", ":8443", "HTTPS listen address")
 		tlsCert      = flag.String("tls-cert", "", "TLS certificate file")
 		tlsKey       = flag.String("tls-key", "", "TLS private key file")
