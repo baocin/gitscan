@@ -16,6 +16,26 @@ git clone https://git.vet/github.com/user/repo
 
 Instead of cloning, they receive a security scan report displayed directly in their terminal.
 
+### Current Implementation Status
+
+| Feature | Status | Location |
+|---------|--------|----------|
+| Git Smart HTTP Protocol | ✅ Done | `internal/githttp/` |
+| Opengrep/Semgrep Integration | ✅ Done | `internal/scanner/` |
+| SARIF Output Parsing | ✅ Done | `internal/scanner/scanner.go` |
+| Terminal Report (Sideband) | ✅ Done | `internal/githttp/handler.go` |
+| Web Report Page | ✅ Done | `web/templates/report.html` |
+| QR Code Generation | ✅ Done | `internal/githttp/qrcode.go` |
+| License Detection | ✅ Done | `internal/license/license.go` |
+| Rate Limiting | ✅ Done | `internal/ratelimit/limiter.go` |
+| Repository Caching | ✅ Done | `internal/cache/cache.go` |
+| SQLite Database | ✅ Done | `internal/db/` |
+| Docker Image | ✅ Done | `docker/Dockerfile` |
+| Unit Tests | ✅ Done | `*_test.go` files |
+| GitHub Actions CI | ✅ Done | `.github/workflows/test.yml` |
+| Marketing Homepage | ✅ Done | `web/templates/index.html` |
+| Pricing Page | ✅ Done | `web/templates/pricing.html` |
+
 ---
 
 ## Core Concept: Git Protocol Sideband Abuse
@@ -608,6 +628,27 @@ For `/plain/` mode, colors are stripped.
 
 ## Build & Test Strategy
 
+### Unit Tests (Implemented)
+
+Unit tests are located alongside the code they test:
+
+| Package | Test File | Coverage |
+|---------|-----------|----------|
+| `internal/scanner` | `scanner_test.go` | SARIF parsing, severity normalization, findings JSON |
+| `internal/githttp` | `qrcode_test.go` | QR generation, sizing, quiet zones, box fitting |
+
+**Run locally:**
+```bash
+go test -v -race -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out
+```
+
+**GitHub Actions CI** (`.github/workflows/test.yml`):
+- Runs on push to `main` and `claude/*` branches
+- Runs on PRs to `main`
+- Includes race detection and coverage reporting
+- Docker tests verify: health, version, homepage, pricing, static assets, git protocol
+
 ### Multi-Stage Docker Build
 
 The build process uses a two-phase approach:
@@ -1197,10 +1238,10 @@ This would position git.vet as a comprehensive code intelligence platform, not j
 - [ ] Alternative package recommendations
 
 ### Phase 4
-- [ ] Self-hosted option (Docker image)
+- [x] Self-hosted option (Docker image) - `docker/Dockerfile`
 - [ ] IDE extensions (VS Code, JetBrains)
 - [ ] Dependency scanning (SCA)
-- [ ] License compliance checking
+- [x] License compliance checking - `internal/license/license.go`
 - [ ] Typosquatting/misspelled repo detection
 - [ ] Auto-clone for clean repos (premium feature)
 

@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,8 +20,16 @@ jobs:
       - name: Build
         run: go build -v ./...
 
-      - name: Run unit tests
-        run: go test -v ./...
+      - name: Run unit tests with coverage
+        run: |
+          go test -v -race -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
 
   integration-test:
     runs-on: ubuntu-latest
@@ -70,61 +78,95 @@ jobs:
 
   docker-test:
     runs-on: ubuntu-latest
+    needs: test  # Run after unit tests pass
     steps:
       - uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build -f docker/Dockerfile -t gitscan:test .
-
-      - name: Run container
         run: |
-          echo "=== Testing binary directly first ==="
-          docker run --rm gitscan:test /usr/local/bin/gitscan --help || echo "Binary failed to run"
+          echo "Building Docker image..."
+          docker build -f docker/Dockerfile -t gitscan:test .
+          echo "Image built successfully"
 
-          echo "=== Checking binary type ==="
-          docker run --rm gitscan:test file /usr/local/bin/gitscan || true
+      - name: Verify binary in image
+        run: |
+          echo "=== Checking binary exists and is executable ==="
+          docker run --rm gitscan:test ls -la /usr/local/bin/gitscan
+          docker run --rm gitscan:test file /usr/local/bin/gitscan
 
-          echo "=== Checking for missing libs ==="
-          docker run --rm gitscan:test ldd /usr/local/bin/gitscan 2>&1 || echo "ldd check done"
+          echo "=== Checking shared library dependencies ==="
+          docker run --rm gitscan:test ldd /usr/local/bin/gitscan 2>&1 || echo "Static binary or musl-linked"
 
-          echo "=== Starting container ==="
+      - name: Start container
+        run: |
           docker run -d --name gitscan-test -p 6633:6633 gitscan:test
-          sleep 10
+          echo "Container started, waiting for server..."
 
-          echo "=== Container status ==="
-          docker ps -a
-
-          echo "=== Container logs ==="
-          docker logs gitscan-test 2>&1 || echo "No logs"
-
-          echo "=== Checking if process is running ==="
-          docker exec gitscan-test ps aux 2>&1 || echo "Cannot exec into container"
-
-      - name: Test health in Docker
-        run: |
-          for i in 1 2 3 4 5; do
-            curl -sf http://localhost:6633/health && exit 0
-            echo "Attempt $i failed, waiting..."
+          # Wait for server to be ready (up to 30 seconds)
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:6633/health > /dev/null 2>&1; then
+              echo "Server ready after $((i*2)) seconds"
+              break
+            fi
+            echo "Waiting... ($i/15)"
             sleep 2
           done
-          echo "=== Final container logs ==="
-          docker logs gitscan-test 2>&1
-          exit 1
 
-      - name: Test version in Docker
+      - name: Test health endpoint
+        run: |
+          response=$(curl -sf http://localhost:6633/health)
+          echo "Health: $response"
+          [ "$response" = "ok" ] || [ "$response" = "OK" ] || exit 1
+
+      - name: Test version endpoint
         run: |
           curl -sf http://localhost:6633/version | jq .
 
-      - name: Test git clone in Docker
+      - name: Test homepage
         run: |
-          # Test info/refs endpoint responds with git protocol
+          curl -sf http://localhost:6633/ | grep -q "git.vet"
+          echo "Homepage OK - contains git.vet"
+
+      - name: Test pricing page
+        run: |
+          curl -sf http://localhost:6633/pricing | grep -q "Pricing"
+          echo "Pricing page OK"
+
+          # Test redirect from /pricing/ to /pricing
+          status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:6633/pricing/)
+          echo "Redirect status: $status"
+          [ "$status" = "301" ] || [ "$status" = "200" ] || exit 1
+
+      - name: Test static assets
+        run: |
+          # Test favicon
+          curl -sf http://localhost:6633/static/favicon.svg > /dev/null
+          echo "Favicon OK"
+
+      - name: Test git protocol - info/refs
+        run: |
           response=$(curl -sf "http://localhost:6633/github.com/OWASP/NodeGoat/info/refs?service=git-upload-pack")
-          echo "$response" | head -c 100
-          # Verify it contains git-upload-pack service announcement
-          echo "$response" | grep -q "git-upload-pack" || exit 1
+          echo "$response" | head -c 200
+          echo ""
+
+          # Verify git protocol response
+          echo "$response" | grep -q "git-upload-pack" || { echo "Missing git-upload-pack in response"; exit 1; }
+          echo "Git info/refs OK"
+
+      - name: Test report page (404 for non-existent)
+        run: |
+          # Should return HTML even for non-existent reports
+          curl -sf http://localhost:6633/r/nonexistent123 | grep -q "Report Not Found"
+          echo "Report 404 page OK"
+
+      - name: Show container logs
+        if: always()
+        run: |
+          echo "=== Container logs ==="
+          docker logs gitscan-test 2>&1 | tail -100
 
       - name: Cleanup
         if: always()
         run: |
-          docker stop gitscan-test || true
-          docker rm gitscan-test || true
+          docker stop gitscan-test 2>/dev/null || true
+          docker rm gitscan-test 2>/dev/null || true
