@@ -306,6 +306,14 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 
 	sb.WriteProgressf("%s [git.vet] Fetched. %d files", IconSuccess, repo.FileCount)
 
+	// Always delete the repo after scanning (success or failure)
+	// This ensures we don't accumulate repos on disk
+	defer func() {
+		if repo != nil && repo.LocalPath != "" {
+			h.cache.DeleteRepo(repo.LocalPath)
+		}
+	}()
+
 	// Step 2: Check for cached scan (unless skipCache is set)
 	if !skipCache {
 		cachedScan, err := h.db.GetScanByRepoAndCommit(repo.ID, repo.LastCommitSHA)

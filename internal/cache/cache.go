@@ -37,8 +37,14 @@ type Config struct {
 
 // DefaultConfig returns default cache configuration
 func DefaultConfig() Config {
+	// Use home directory based temp dir if possible
+	cacheDir := "/tmp/gitvettmpdir"
+	if home, err := os.UserHomeDir(); err == nil {
+		cacheDir = filepath.Join(home, "gitvettmpdir")
+	}
+
 	return Config{
-		CacheDir:     "/tmp/gitscan-cache",
+		CacheDir:     cacheDir,
 		MaxRepoSize:  500 * 1024 * 1024, // 500MB
 		StaleAfter:   1 * time.Hour,
 		CloneTimeout: 120 * time.Second,
@@ -272,6 +278,27 @@ func (c *RepoCache) getRepoStats(repoPath string) (sizeBytes int64, fileCount in
 // GetCacheDir returns the cache directory path
 func (c *RepoCache) GetCacheDir() string {
 	return c.cacheDir
+}
+
+// DeleteRepo removes a cached repository from disk
+// This should be called after scanning completes (success or failure)
+func (c *RepoCache) DeleteRepo(localPath string) error {
+	if localPath == "" {
+		return nil
+	}
+	// Safety check: ensure path is within cache dir
+	absPath, err := filepath.Abs(localPath)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+	absCacheDir, err := filepath.Abs(c.cacheDir)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute cache dir: %w", err)
+	}
+	if !strings.HasPrefix(absPath, absCacheDir) {
+		return fmt.Errorf("refusing to delete path outside cache directory: %s", localPath)
+	}
+	return os.RemoveAll(localPath)
 }
 
 // Cleanup removes old cached repositories
