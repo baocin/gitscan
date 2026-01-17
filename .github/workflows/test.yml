@@ -104,6 +104,42 @@ jobs:
           # Test that our Go code can parse the scanner output
           go test -v -run TestParseSARIF ./internal/scanner/...
 
+  benchmark-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install opengrep (pinned version)
+        run: |
+          pip install "opengrep==${OPENGREP_VERSION}"
+          opengrep --version
+
+      - name: Run OWASP NodeGoat clone test
+        run: |
+          go test -v -run TestCloneOWASPNodeGoatPinned ./test/... -timeout 5m
+
+      - name: Run clone speed tests
+        run: |
+          go test -v -run TestCloneSpeed ./test/... -timeout 5m
+
+      - name: Run OWASP NodeGoat scan test
+        run: |
+          go test -v -run TestScanOWASPNodeGoat ./test/... -timeout 10m
+
+      - name: Run benchmarks (1 iteration for CI)
+        run: |
+          go test -bench=. -benchtime=1x -run=^$ ./test/... -timeout 10m || true
+
   integration-test:
     runs-on: ubuntu-latest
     needs: test
