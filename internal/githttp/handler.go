@@ -154,6 +154,10 @@ func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r
 		return
 	}
 
+	// Send NAK first - required by git protocol before sideband messages
+	pkt := NewPktLineWriter(w)
+	pkt.WriteString("NAK\n")
+
 	// Create sideband writer for streaming output
 	useColors := parsed.Mode != "plain"
 	sb := NewSidebandWriter(w, useColors)
