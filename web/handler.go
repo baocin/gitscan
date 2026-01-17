@@ -81,6 +81,7 @@ type ReportData struct {
 	ScannedAt     string
 	FilesScanned  int
 	ScanDuration  string
+	License       string
 	CriticalCount int
 	HighCount     int
 	MediumCount   int
@@ -119,6 +120,7 @@ func (h *Handler) ServeReport(w http.ResponseWriter, r *http.Request) {
 			data.ScannedAt = scan.CreatedAt.Format(time.RFC1123)
 			data.FilesScanned = scan.FilesScanned
 			data.ScanDuration = formatDuration(time.Duration(scan.ScanDurationMS) * time.Millisecond)
+			data.License = scan.License
 			data.CriticalCount = scan.CriticalCount
 			data.HighCount = scan.HighCount
 			data.MediumCount = scan.MediumCount

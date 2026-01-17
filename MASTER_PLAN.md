@@ -99,6 +99,58 @@ fatal: Could not read from remote repository.
 | GitHub | `git.vet/github.com/owner/repo` |
 | GitLab | `git.vet/gitlab.com/owner/repo` |
 | Bitbucket | `git.vet/bitbucket.org/owner/repo` |
+| Gitea | `git.vet/gitea.example.com/owner/repo` |
+| Self-hosted GitLab | `git.vet/gitlab.company.com/owner/repo` |
+
+### Branch and Tag Support
+
+Users should be able to scan specific branches or tags:
+
+| Pattern | Example |
+|---------|---------|
+| Branch | `git.vet/github.com/user/repo@develop` |
+| Tag | `git.vet/github.com/user/repo@v1.2.3` |
+| Commit SHA | `git.vet/github.com/user/repo@abc123def` |
+
+**Implementation Notes:**
+
+Different git hosts use different URL formats for branches/tags:
+
+| Host | Clone URL Format |
+|------|------------------|
+| GitHub | `git clone -b <ref> https://github.com/user/repo` |
+| GitLab | `git clone -b <ref> https://gitlab.com/user/repo` |
+| Bitbucket | `git clone -b <ref> https://bitbucket.org/user/repo` |
+| Gitea | `git clone -b <ref> https://gitea.example.com/user/repo` |
+
+All major git hosts support the `-b` flag for specifying branches/tags, so we can use a unified approach:
+
+```go
+// Parse ref from URL: repo@ref
+ref := "main" // default
+if strings.Contains(repoPath, "@") {
+    parts := strings.SplitN(repoPath, "@", 2)
+    repoPath = parts[0]
+    ref = parts[1]
+}
+
+// Clone with specific ref
+cmd := exec.CommandContext(ctx, "git", "clone",
+    "--depth", "1",
+    "--single-branch",
+    "-b", ref,
+    repoURL,
+    localPath,
+)
+```
+
+**Testing Required:**
+- [ ] GitHub branches and tags
+- [ ] GitLab branches and tags
+- [ ] Bitbucket branches and tags
+- [ ] Gitea branches and tags
+- [ ] Self-hosted GitLab instances
+- [ ] Invalid ref handling (graceful error)
 
 ---
 
@@ -961,6 +1013,68 @@ services:
 
 ---
 
+## What Happens After the Report
+
+### Security Score (0-100)
+
+Provide a weighted overall security score:
+
+| Severity | Weight |
+|----------|--------|
+| Critical | 25 pts per finding (max 100 deduction) |
+| High     | 10 pts per finding (max 60 deduction) |
+| Medium   | 3 pts per finding (max 30 deduction)  |
+| Low      | 1 pt per finding (max 10 deduction)   |
+
+```
+Score = max(0, 100 - (critical_penalty + high_penalty + medium_penalty + low_penalty))
+```
+
+Display as: `Security Score: 73/100 ⭐⭐⭐☆☆`
+
+### Recommended Alternatives
+
+When a vulnerable package is found:
+- Suggest safer alternatives with their security scores
+- Show one-liner remediation commands
+
+```
+⚠ Found: lodash@3.10.1 (4 High vulnerabilities)
+✓ Alternative: lodash@4.17.21 (0 vulnerabilities)
+  Fix: npm install lodash@4.17.21
+
+⚠ Found: express@3.x (deprecated, 12 vulnerabilities)
+✓ Alternative: express@4.18.2 (0 vulnerabilities)
+  Fix: npm install express@4.18.2
+```
+
+### Auto-Clone for Clean Repos (Premium)
+
+If no issues are found:
+- Option to automatically complete the clone
+- No need to re-run with the original URL
+- Saves time for frequent scanners
+
+### Misspelled Repo Detection
+
+Detect common typosquatting patterns:
+```
+⚠ Did you mean github.com/facebook/react?
+  You requested: github.com/facebok/react
+
+⚠ This repo name is similar to a popular package.
+  Consider verifying you have the correct repository.
+```
+
+### Web Report Enhancements
+
+- Copy-to-clipboard button for clone command
+- One-click clone command generation
+- Download report as PDF/JSON
+- Share report link
+
+---
+
 ## Future Enhancements
 
 ### Phase 2
@@ -968,18 +1082,22 @@ services:
 - [ ] GitLab and Bitbucket support
 - [ ] Custom rule upload via web UI
 - [ ] Webhook notifications
+- [ ] Security score (0-100) with severity weighting
 
 ### Phase 3
 - [ ] PR comment integration (gitscan as GitHub Action)
 - [ ] Historical trend tracking
 - [ ] Organization dashboards
 - [ ] API for CI/CD integration
+- [ ] Alternative package recommendations
 
 ### Phase 4
 - [ ] Self-hosted option (Docker image)
 - [ ] IDE extensions (VS Code, JetBrains)
 - [ ] Dependency scanning (SCA)
 - [ ] License compliance checking
+- [ ] Typosquatting/misspelled repo detection
+- [ ] Auto-clone for clean repos (premium feature)
 
 ---
 

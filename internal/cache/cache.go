@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/baocin/gitscan/internal/db"
+	"github.com/baocin/gitscan/internal/license"
 )
 
 // RepoCache manages cached repository clones
@@ -59,6 +60,7 @@ type CachedRepo struct {
 	LocalPath     string
 	LastCommitSHA string
 	FileCount     int
+	License       string // License type (e.g., "MIT", "Apache-2.0")
 }
 
 // ProgressFunc is a callback for progress updates
@@ -103,12 +105,18 @@ func (c *RepoCache) FetchRepo(ctx context.Context, repoPath, cloneURL string, pr
 			if progressFn != nil {
 				progressFn("Using cached repository")
 			}
+			// Detect license
+			licenseType := ""
+			if licInfo := license.Detect(dbRepo.LocalPath); licInfo != nil {
+				licenseType = licInfo.Type
+			}
 			return &CachedRepo{
 				ID:            dbRepo.ID,
 				URL:           dbRepo.URL,
 				LocalPath:     dbRepo.LocalPath,
 				LastCommitSHA: dbRepo.LastCommitSHA,
 				FileCount:     dbRepo.FileCount,
+				License:       licenseType,
 			}, nil
 		}
 
@@ -183,12 +191,20 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 		progressFn(fmt.Sprintf("Cloned %d files", fileCount))
 	}
 
+	// Detect license and save to database
+	licenseType := ""
+	if licInfo := license.Detect(localPath); licInfo != nil {
+		licenseType = licInfo.Type
+		c.db.UpdateRepoLicense(dbRepo.ID, licenseType)
+	}
+
 	return &CachedRepo{
 		ID:            dbRepo.ID,
 		URL:           repoPath,
 		LocalPath:     localPath,
 		LastCommitSHA: commitSHA,
 		FileCount:     fileCount,
+		License:       licenseType,
 	}, nil
 }
 
@@ -237,12 +253,20 @@ func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn 
 		progressFn(fmt.Sprintf("Updated to %s", truncate(commitSHA, 8)))
 	}
 
+	// Detect license and save to database
+	licenseType := ""
+	if licInfo := license.Detect(dbRepo.LocalPath); licInfo != nil {
+		licenseType = licInfo.Type
+		c.db.UpdateRepoLicense(dbRepo.ID, licenseType)
+	}
+
 	return &CachedRepo{
 		ID:            dbRepo.ID,
 		URL:           dbRepo.URL,
 		LocalPath:     dbRepo.LocalPath,
 		LastCommitSHA: commitSHA,
 		FileCount:     fileCount,
+		License:       licenseType,
 	}, nil
 }
 

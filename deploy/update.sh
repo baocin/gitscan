@@ -35,6 +35,24 @@ chown gitvet:gitvet /opt/gitvet/git-vet-server
 echo "Clearing cache..."
 rm -rf /var/lib/gitvet/cache/*
 
+# Install/update opengrep if needed
+if ! command -v opengrep &> /dev/null || ! opengrep --version &> /dev/null; then
+    echo "Installing opengrep..."
+    rm -rf /usr/local/bin/opengrep
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+        OPENGREP_URL="https://github.com/opengrep/opengrep/releases/download/v1.15.1/opengrep_manylinux_aarch64"
+    else
+        OPENGREP_URL="https://github.com/opengrep/opengrep/releases/download/v1.15.1/opengrep_manylinux_x86_64"
+    fi
+    curl -L -o /tmp/opengrep-bin "$OPENGREP_URL"
+    chmod +x /tmp/opengrep-bin
+    mv /tmp/opengrep-bin /usr/local/bin/opengrep
+    echo "opengrep installed: $(opengrep --version 2>&1 | head -1)"
+else
+    echo "opengrep already installed: $(opengrep --version 2>&1 | head -1)"
+fi
+
 # Start service
 echo "Starting service..."
 systemctl start gitvet

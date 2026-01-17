@@ -2,6 +2,7 @@ package githttp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -273,9 +274,9 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		return // Client cancelled, abort silently
 	}
 
-	// Step 1: Fetch repository (shallow clone)
+	// Step 1: Fetch repository
 	frame := 0
-	sb.WriteProgressf("%s [git.vet] Fetching from %s (shallow clone)...", SpinnerFrames[frame%len(SpinnerFrames)], parsed.Host)
+	sb.WriteProgressf("%s [git.vet] Fetching from %s...", SpinnerFrames[frame%len(SpinnerFrames)], parsed.Host)
 
 	// Use full path as cache key, and construct proper clone URL
 	cloneURL := parsed.GetCloneURL()
@@ -285,7 +286,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 			return
 		}
 		frame++
-		sb.WriteProgressf("%s [git.vet] %s", SpinnerFrames[frame%len(SpinnerFrames)], progress)
+		// Don't show individual progress messages - keep output clean
 	})
 
 	// Check if cancelled during fetch
@@ -304,7 +305,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		return
 	}
 
-	sb.WriteProgressf("%s [git.vet] Fetched. %d files", IconSuccess, repo.FileCount)
+	sb.WriteProgressf("%s [git.vet] Repository fetched", IconSuccess)
 
 	// Always delete the repo after scanning (success or failure)
 	// This ensures we don't accumulate repos on disk
@@ -332,8 +333,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	}
 
 	// Step 3: Run scan
-	scannerName := h.scanner.GetBinaryPath()
-	sb.WriteProgressf("%s [git.vet] Scanning with %s...", SpinnerFrames[frame%len(SpinnerFrames)], scannerName)
+	sb.WriteProgressf("%s [git.vet] Scanning for vulnerabilities...", SpinnerFrames[frame%len(SpinnerFrames)])
 
 	scanResult, err := h.scanner.Scan(ctx, repo.LocalPath, func(progress scanner.Progress) {
 		// Check for disconnect during scan
@@ -341,9 +341,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 			return
 		}
 		frame++
-		sb.WriteProgressf("%s [git.vet] Scanning: %d/%d files (%d%%)",
-			SpinnerFrames[frame%len(SpinnerFrames)],
-			progress.FilesScanned, progress.FilesTotal, progress.Percent)
+		sb.WriteProgressf("%s [git.vet] Scanning for vulnerabilities...", SpinnerFrames[frame%len(SpinnerFrames)])
 	})
 
 	// Check if cancelled during scan
@@ -403,6 +401,9 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	report.WriteBoxLine(sb.Bold("GIT.VET SECURITY REPORT"), width)
 	report.WriteBoxLine(fmt.Sprintf("Repository: %s", parsed.FullPath), width)
 	report.WriteBoxLine(fmt.Sprintf("Commit: %s", truncate(scan.CommitSHA, 12)), width)
+	if repo.License != "" {
+		report.WriteBoxLine(fmt.Sprintf("License: %s", repo.License), width)
+	}
 	report.WriteBoxLine(fmt.Sprintf("Scanned: %d files in %.1fs", scan.FilesScanned, float64(scan.ScanDurationMS)/1000), width)
 	if cacheHit {
 		report.WriteBoxLine(sb.Color(Cyan, "(cached result)"), width)
@@ -418,18 +419,102 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	)
 	report.WriteBoxLine(summaryLine, width)
 
-	// TODO: Add individual findings from ResultsJSON
-	// This would parse the SARIF output and display top findings
+	// Show findings if any (from low to high priority so terminal scrolls to most important)
+	totalFindings := scan.CriticalCount + scan.HighCount + scan.MediumCount + scan.LowCount
+	if totalFindings > 0 && scan.ResultsJSON != "" {
+		report.WriteBoxMiddle(width)
+		report.WriteBoxLine(sb.Bold("FINDINGS:"), width)
+		report.WriteBoxLine("", width)
 
-	// Footer
+		// Parse findings from ResultsJSON
+		var findings []scanner.Finding
+		if err := json.Unmarshal([]byte(scan.ResultsJSON), &findings); err == nil {
+			// Sort by severity (Low -> Medium -> High -> Critical for terminal scroll)
+			sortedFindings := sortFindingsBySeverity(findings)
+
+			// Show all findings
+			for i, f := range sortedFindings {
+				severityIcon := getSeverityIcon(sb, f.Severity)
+				// Truncate message if too long
+				msg := f.Message
+				if len(msg) > 50 {
+					msg = msg[:47] + "..."
+				}
+				report.WriteBoxLine(fmt.Sprintf("%s %s", severityIcon, f.RuleID), width)
+				report.WriteBoxLine(fmt.Sprintf("  %s:%d", f.Path, f.StartLine), width)
+				report.WriteBoxLine(fmt.Sprintf("  %s", msg), width)
+				if i < len(sortedFindings)-1 {
+					report.WriteBoxLine("", width)
+				}
+			}
+		}
+	}
+
+	// Report URL section
 	report.WriteBoxMiddle(width)
-	report.WriteBoxLine(fmt.Sprintf("Full report: https://git.vet/r/%s", truncate(scan.CommitSHA, 8)), width)
-	// Show the actual clone URL (e.g., https://github.com/user/repo)
+	reportURL := fmt.Sprintf("https://git.vet/r/%s", truncate(scan.CommitSHA, 8))
+	report.WriteBoxLine(fmt.Sprintf("Full report: %s", reportURL), width)
+	report.WriteBoxLine("", width)
+
+	// QR Code
+	qrLines := GenerateCompactQR()
+	for _, line := range qrLines {
+		report.WriteBoxLineCentered(line, width)
+	}
+	report.WriteBoxLineCentered("^ Scan to view full report ^", width)
+
+	// Clone URL
+	report.WriteBoxMiddle(width)
 	cloneURL := fmt.Sprintf("https://%s/%s/%s", parsed.Host, parsed.Owner, parsed.Repo)
 	report.WriteBoxLine(fmt.Sprintf("To clone: git clone %s", cloneURL), width)
+
+	// Contact email
+	report.WriteBoxMiddle(width)
+	report.WriteBoxLine(fmt.Sprintf("Questions? %s", sb.Color(Cyan, "gitvet@steele.red")), width)
 	report.WriteBoxBottom(width)
 
 	sb.WriteEmptyLine()
+}
+
+// getSeverityIcon returns the colored icon for a severity level
+func getSeverityIcon(sb *SidebandWriter, severity string) string {
+	switch strings.ToLower(severity) {
+	case "critical", "error":
+		return sb.Color(Red, IconCritical)
+	case "high", "warning":
+		return sb.Color(Yellow, IconHigh)
+	case "medium":
+		return sb.Color(Blue, IconMedium)
+	case "low", "info":
+		return IconLow
+	default:
+		return IconInfo
+	}
+}
+
+// sortFindingsBySeverity sorts findings from low to high priority
+// so terminal scrolls up to most important findings at the end
+func sortFindingsBySeverity(findings []scanner.Finding) []scanner.Finding {
+	// Create a copy to avoid modifying original
+	sorted := make([]scanner.Finding, len(findings))
+	copy(sorted, findings)
+
+	// Sort by severity priority (low first, critical last)
+	severityOrder := map[string]int{
+		"info": 0, "low": 1, "medium": 2, "high": 3, "warning": 3, "critical": 4, "error": 4,
+	}
+
+	for i := 0; i < len(sorted)-1; i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			iPriority := severityOrder[strings.ToLower(sorted[i].Severity)]
+			jPriority := severityOrder[strings.ToLower(sorted[j].Severity)]
+			if iPriority > jPriority {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+
+	return sorted
 }
 
 // writeRateLimitResponse writes a rate limit error via sideband-style output

@@ -383,6 +383,7 @@
                 </h1>
                 <div class="report-meta">
                     <span>Commit: <code>{{.ShortCommit}}</code></span>
+                    {{if .License}}<span>License: <code>{{.License}}</code></span>{{end}}
                     <span>Scanned: {{.ScannedAt}}</span>
                     <span>{{.FilesScanned}} files in {{.ScanDuration}}</span>
                 </div>

@@ -10,8 +10,15 @@ CREATE TABLE IF NOT EXISTS repos (
     last_fetched_at DATETIME,
     size_bytes INTEGER,
     file_count INTEGER,
+    license TEXT,                          -- MIT, Apache-2.0, GPL-3.0, etc.
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Migration: Add license column if it doesn't exist
+-- SQLite doesn't support ADD COLUMN IF NOT EXISTS, so we use a workaround
+CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY);
+INSERT OR IGNORE INTO _migrations (name) VALUES ('add_license_column');
+-- The actual migration is done in Go code
 
 -- Scan results (cached per commit)
 CREATE TABLE IF NOT EXISTS scans (
