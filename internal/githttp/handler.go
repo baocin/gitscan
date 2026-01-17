@@ -147,6 +147,9 @@ func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r
 	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
 	w.Header().Set("Cache-Control", "no-cache")
 
+	// Check for secret cache bypass param
+	skipCache := r.URL.Query().Has("cachebuster3000")
+
 	// Parse incoming request (want/have lines)
 	_, err := ParseGitRequest(r.Body)
 	if err != nil {
@@ -175,7 +178,7 @@ func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r
 	}
 
 	// Start the scan process
-	h.performScan(ctx, sb, parsed, clientIP, startTime, isPrivate)
+	h.performScan(ctx, sb, parsed, clientIP, startTime, isPrivate, skipCache)
 
 	// Send empty packfile and flush to properly terminate git protocol
 	sb.WriteEmptyPackfile()
@@ -240,7 +243,7 @@ func checkClientDisconnected(ctx context.Context) bool {
 }
 
 // performScan fetches the repo, scans it, and writes results via sideband
-func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *ParsedPath, clientIP string, startTime time.Time, isPrivate bool) {
+func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *ParsedPath, clientIP string, startTime time.Time, isPrivate bool, skipCache bool) {
 	report := NewReportWriter(sb)
 	boxWidth := 66
 
@@ -303,12 +306,16 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 
 	sb.WriteProgressf("%s [git.vet] Fetched. %d files", IconSuccess, repo.FileCount)
 
-	// Step 2: Check for cached scan
-	cachedScan, err := h.db.GetScanByRepoAndCommit(repo.ID, repo.LastCommitSHA)
-	if err == nil && cachedScan != nil {
-		sb.WriteProgressf("%s [git.vet] Using cached scan results", IconSuccess)
-		h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true)
-		return
+	// Step 2: Check for cached scan (unless skipCache is set)
+	if !skipCache {
+		cachedScan, err := h.db.GetScanByRepoAndCommit(repo.ID, repo.LastCommitSHA)
+		if err == nil && cachedScan != nil {
+			sb.WriteProgressf("%s [git.vet] Using cached scan results", IconSuccess)
+			h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true)
+			return
+		}
+	} else {
+		sb.WriteProgressf("%s [git.vet] Cache bypass enabled - forcing fresh scan", IconSuccess)
 	}
 
 	// Check for client disconnect before scanning
@@ -317,7 +324,8 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	}
 
 	// Step 3: Run scan
-	sb.WriteProgressf("%s [git.vet] Scanning with opengrep...", SpinnerFrames[frame%len(SpinnerFrames)])
+	scannerName := h.scanner.GetBinaryPath()
+	sb.WriteProgressf("%s [git.vet] Scanning with %s...", SpinnerFrames[frame%len(SpinnerFrames)], scannerName)
 
 	scanResult, err := h.scanner.Scan(ctx, repo.LocalPath, func(progress scanner.Progress) {
 		// Check for disconnect during scan
