@@ -43,8 +43,8 @@ cd gitscan
 go build -o /opt/gitvet/git-vet-server ./cmd/gitscan-server
 chown gitvet:gitvet /opt/gitvet/git-vet-server
 
-# Install systemd service
-cat > /etc/systemd/system/gitvet.service << 'EOF'
+# Install systemd service (note: EOF without quotes to allow variable expansion)
+cat > /etc/systemd/system/gitvet.service << EOF
 [Unit]
 Description=git.vet Security Scanner
 After=network.target
@@ -54,6 +54,7 @@ Type=simple
 User=gitvet
 Group=gitvet
 WorkingDirectory=/opt/gitvet
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 ExecStart=/opt/gitvet/git-vet-server \
     -listen :6633 \
     -db /var/lib/gitvet/data/gitvet.db \
