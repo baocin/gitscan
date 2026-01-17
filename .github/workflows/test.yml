@@ -78,15 +78,27 @@ jobs:
 
       - name: Run container
         run: |
+          echo "=== Testing binary directly first ==="
+          docker run --rm gitscan:test /usr/local/bin/gitscan --help || echo "Binary failed to run"
+
+          echo "=== Checking binary type ==="
+          docker run --rm gitscan:test file /usr/local/bin/gitscan || true
+
+          echo "=== Checking for missing libs ==="
+          docker run --rm gitscan:test ldd /usr/local/bin/gitscan 2>&1 || echo "ldd check done"
+
+          echo "=== Starting container ==="
           docker run -d --name gitscan-test -p 6633:6633 gitscan:test
-          echo "=== Waiting for container to start ==="
           sleep 10
+
           echo "=== Container status ==="
           docker ps -a
+
           echo "=== Container logs ==="
-          docker logs gitscan-test 2>&1
-          echo "=== Testing if port is listening ==="
-          docker exec gitscan-test wget --spider -q http://localhost:6633/health && echo "Health OK from inside container" || echo "Health FAILED from inside container"
+          docker logs gitscan-test 2>&1 || echo "No logs"
+
+          echo "=== Checking if process is running ==="
+          docker exec gitscan-test ps aux 2>&1 || echo "Cannot exec into container"
 
       - name: Test health in Docker
         run: |
