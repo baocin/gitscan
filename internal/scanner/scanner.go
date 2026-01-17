@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,6 +48,20 @@ func New(cfg Config) *Scanner {
 	}
 }
 
+// IsAvailable checks if the scanner binary is available
+func (s *Scanner) IsAvailable() (bool, string) {
+	path, err := exec.LookPath(s.binaryPath)
+	if err != nil {
+		return false, ""
+	}
+	return true, path
+}
+
+// GetBinaryPath returns the configured binary path
+func (s *Scanner) GetBinaryPath() string {
+	return s.binaryPath
+}
+
 // Progress represents scan progress
 type Progress struct {
 	FilesScanned int
@@ -68,6 +83,7 @@ type Result struct {
 	FilesScanned  int
 	Duration      time.Duration
 	RawJSON       string
+	ScannerUsed   string // "opengrep", "semgrep", or "mock"
 }
 
 // Finding represents a single security finding
@@ -167,6 +183,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, s.binaryPath, args...)
+	log.Printf("[scanner] Running: %s %s", s.binaryPath, strings.Join(args, " "))
 
 	// Capture stdout for JSON output
 	stdout, err := cmd.StdoutPipe()
@@ -181,9 +198,9 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	}
 
 	if err := cmd.Start(); err != nil {
-		// If opengrep is not installed, return empty results
+		// If opengrep is not installed, return an error - don't silently mock
 		if strings.Contains(err.Error(), "executable file not found") {
-			return s.mockScan(repoPath, totalFiles, startTime)
+			return nil, fmt.Errorf("opengrep/semgrep not found: %s is not installed or not in PATH", s.binaryPath)
 		}
 		return nil, fmt.Errorf("failed to start scanner: %w", err)
 	}
@@ -240,9 +257,13 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 			FilesScanned: totalFiles,
 			Duration:     time.Since(startTime),
 			RawJSON:      jsonOutput.String(),
+			ScannerUsed:  s.binaryPath,
 		}, nil
 	}
 
+	result.ScannerUsed = s.binaryPath
+	log.Printf("[scanner] Completed: %d findings (%d critical, %d high, %d medium, %d low) in %v",
+		len(result.Findings), result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount, result.Duration)
 	return result, nil
 }
 

@@ -1,5 +1,5 @@
 module github.com/baocin/gitscan
 
-go 1.24.7
+go 1.22
 
 require github.com/mattn/go-sqlite3 v1.14.33

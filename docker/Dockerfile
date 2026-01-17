@@ -14,8 +14,8 @@
 # ============================================================================
 FROM golang:1.22-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git gcc musl-dev sqlite-dev
+# Install build dependencies (including static libs for fully static binary)
+RUN apk add --no-cache git gcc musl-dev sqlite-dev sqlite-static
 
 WORKDIR /src
 
@@ -29,9 +29,10 @@ COPY . .
 # Download dependencies (in case go.sum didn't exist)
 RUN go mod tidy
 
-# Build the binary
+# Build the binary with static linking for portability
 RUN CGO_ENABLED=1 GOOS=linux go build \
-    -ldflags="-s -w -X main.Version=$(git describe --tags --always 2>/dev/null || echo 'dev') \
+    -ldflags="-s -w -linkmode external -extldflags '-static' \
+              -X main.Version=$(git describe --tags --always 2>/dev/null || echo 'dev') \
               -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
               -X main.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')" \
     -o /gitscan \
@@ -41,26 +42,26 @@ RUN CGO_ENABLED=1 GOOS=linux go build \
 RUN go test -v ./... || echo "Tests completed (some may have failed due to missing dependencies)"
 
 # ============================================================================
-# Stage 2: Cache opengrep binary and rules
+# Stage 2: Production image
 # ============================================================================
-FROM ghcr.io/opengrep/opengrep:latest AS opengrep-cache
-
-# Opengrep image contains:
-# - /usr/local/bin/opengrep (or similar)
-# - Rules at various locations
-# We extract what we need in the production stage
-
-# ============================================================================
-# Stage 3: Production image
-# ============================================================================
-FROM alpine:3.19 AS production
+FROM python:3.11-alpine AS production
 
 # Install runtime dependencies
 RUN apk add --no-cache \
     git \
     ca-certificates \
     sqlite-libs \
-    tzdata
+    tzdata \
+    gcc \
+    musl-dev \
+    libffi-dev
+
+# Install opengrep via pip and verify
+RUN pip install --no-cache-dir opengrep || pip install --no-cache-dir semgrep && \
+    echo "=== Checking installed scanner ===" && \
+    (which opengrep && opengrep --version) || \
+    (which semgrep && semgrep --version) || \
+    echo "WARNING: No scanner found in PATH"
 
 # Create non-root user
 RUN addgroup -S gitscan && adduser -S gitscan -G gitscan
@@ -72,14 +73,8 @@ RUN mkdir -p /data/sqlite /data/repos /etc/gitscan/rules \
 # Copy gitscan binary
 COPY --from=builder /gitscan /usr/local/bin/gitscan
 
-# Copy opengrep binary (adjust path based on actual opengrep image structure)
-COPY --from=opengrep-cache /usr/local/bin/opengrep /usr/local/bin/opengrep 2>/dev/null || \
-    COPY --from=opengrep-cache /opengrep /usr/local/bin/opengrep 2>/dev/null || \
-    echo "Warning: opengrep binary not found, will use mock scanner"
-
-# Make binaries executable
-RUN chmod +x /usr/local/bin/gitscan && \
-    (chmod +x /usr/local/bin/opengrep 2>/dev/null || true)
+# Make binary executable
+RUN chmod +x /usr/local/bin/gitscan
 
 # Set working directory
 WORKDIR /data
@@ -88,15 +83,15 @@ WORKDIR /data
 USER gitscan
 
 # Expose ports
-EXPOSE 8080 8443
+EXPOSE 6633 8443
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:6633/health || exit 1
 
 # Default command
 ENTRYPOINT ["/usr/local/bin/gitscan"]
-CMD ["--listen", ":8080", "--db", "/data/sqlite/gitscan.db", "--cache-dir", "/data/repos"]
+CMD ["--listen", ":6633", "--db", "/data/sqlite/gitscan.db", "--cache-dir", "/data/repos"]
 
 # ============================================================================
 # Stage 4: Test base image (for git version tests)

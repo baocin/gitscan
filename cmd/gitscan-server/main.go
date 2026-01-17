@@ -73,7 +73,13 @@ func main() {
 	scannerCfg.BinaryPath = *openGrepPath
 	scannerCfg.RulesPath = *rulesPath
 	scan := scanner.New(scannerCfg)
-	log.Printf("Scanner initialized: %s", *openGrepPath)
+
+	// Check if scanner is available
+	if available, path := scan.IsAvailable(); available {
+		log.Printf("Scanner initialized: %s (found at %s)", *openGrepPath, path)
+	} else {
+		log.Printf("WARNING: Scanner binary '%s' not found in PATH - scans will fail!", *openGrepPath)
+	}
 
 	// Initialize rate limiter
 	limiterCfg := ratelimit.DefaultConfig()
@@ -114,6 +120,9 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"version":"%s","build_time":"%s","git_commit":"%s"}`, Version, BuildTime, GitCommit)
 	})
+
+	// Static files
+	mux.HandleFunc("/static/", webHandler.ServeStatic)
 
 	// Web pages
 	mux.HandleFunc("/pricing", webHandler.ServePricing)
