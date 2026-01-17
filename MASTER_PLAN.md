@@ -1075,6 +1075,44 @@ Detect common typosquatting patterns:
 
 ---
 
+## Claude Code Integration
+
+### AI-Assisted Security Scanning
+
+git.vet can be integrated as a **Claude Code skill** that intercepts `git clone` commands before cloning repositories. This enables AI-assisted development workflows where:
+
+1. **Automatic Security Checks**: When Claude Code attempts to clone a repository, the skill intercepts the command and routes it through git.vet first
+2. **Pre-Clone Vulnerability Awareness**: Claude sees the security scan results before the code is cloned, allowing it to warn users about vulnerabilities
+3. **Informed Decision Making**: If critical or high-severity vulnerabilities are found, Claude can:
+   - Alert the user about the security risks
+   - Suggest safer alternatives or forks
+   - Recommend specific security mitigations before proceeding
+   - Optionally block the clone if the risk is too high
+
+### Skill Implementation Concept
+
+```bash
+# Instead of directly running:
+git clone https://github.com/user/repo
+
+# The Claude Code skill would intercept and run:
+git clone https://git.vet/github.com/user/repo
+
+# Claude would then see the security report in the terminal output
+# and can make informed decisions about whether to proceed
+```
+
+### Benefits for AI-Assisted Development
+
+- **Proactive Security**: Security vulnerabilities are surfaced before code enters the development environment
+- **Context for AI**: Claude has security context when helping with code from that repository
+- **Reduced Attack Surface**: Prevents inadvertent cloning of malicious or vulnerable dependencies
+- **Audit Trail**: All scans are logged, providing visibility into what code AI assistants are working with
+
+This integration positions git.vet as a security layer for the emerging AI-assisted development ecosystem.
+
+---
+
 ## Future Enhancements
 
 ### Phase 2

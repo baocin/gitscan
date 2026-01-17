@@ -456,12 +456,12 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	report.WriteBoxLine(fmt.Sprintf("Full report: %s", reportURL), width)
 	report.WriteBoxLine("", width)
 
-	// QR Code
-	qrLines := GenerateCompactQR()
+	// QR Code - generate a real, scannable QR code linking to the report
+	qrLines := GenerateScaledQR(reportURL)
 	for _, line := range qrLines {
 		report.WriteBoxLineCentered(line, width)
 	}
-	report.WriteBoxLineCentered("^ Scan to view full report ^", width)
+	report.WriteBoxLineCentered("^ Scan QR to view full report ^", width)
 
 	// Clone URL
 	report.WriteBoxMiddle(width)

@@ -184,6 +184,8 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, s.binaryPath, args...)
+	// Set QT_QPA_PLATFORM=offscreen to prevent Qt display errors on headless servers
+	cmd.Env = append(os.Environ(), "QT_QPA_PLATFORM=offscreen")
 	log.Printf("[scanner] Running: %s %s", s.binaryPath, strings.Join(args, " "))
 
 	// Capture stdout for JSON output
