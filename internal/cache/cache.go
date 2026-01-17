@@ -212,8 +212,8 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn ProgressFunc) (*CachedRepo, error) {
 	// Check if local path exists
 	if _, err := os.Stat(dbRepo.LocalPath); os.IsNotExist(err) {
-		// Re-clone if missing
-		repoURL := fmt.Sprintf("https://github.com/%s.git", dbRepo.URL)
+		// Re-clone if missing - dbRepo.URL contains full path like "github.com/user/repo"
+		repoURL := fmt.Sprintf("https://%s.git", dbRepo.URL)
 		return c.cloneRepo(ctx, dbRepo.URL, repoURL, progressFn)
 	}
 
