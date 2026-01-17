@@ -135,7 +135,7 @@ func (h *Handler) handleInfoRefs(ctx context.Context, w http.ResponseWriter, r *
 	fakeOID := "0000000000000000000000000000000000000000"
 
 	// Write ref advertisement with capabilities
-	caps := "multi_ack thin-pack side-band side-band-64k ofs-delta shallow deepen-since deepen-not deepen-relative no-progress include-tag multi_ack_detailed symref=HEAD:refs/heads/main agent=gitscan/1.0"
+	caps := "multi_ack thin-pack side-band side-band-64k ofs-delta shallow deepen-since deepen-not deepen-relative no-progress include-tag multi_ack_detailed symref=HEAD:refs/heads/main agent=git.vet/1.0"
 	pkt.WriteString(fmt.Sprintf("%s HEAD\x00%s\n", fakeOID, caps))
 	pkt.WriteString(fmt.Sprintf("%s refs/heads/main\n", fakeOID))
 	pkt.WriteFlush()
@@ -243,7 +243,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 
 	// Step 0: Preflight checks (disk space only, no API calls)
 	if h.preflight != nil {
-		sb.WriteProgress("[gitscan] Running preflight checks...")
+		sb.WriteProgress("[git.vet] Running preflight checks...")
 
 		// Check disk space
 		available, ok, err := h.preflight.CheckDiskSpace(h.cache.GetCacheDir())
@@ -257,7 +257,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 			sb.WriteEmptyLine()
 			return
 		}
-		sb.WriteProgressf("[gitscan] Preflight OK (disk space: %s free)", preflight.FormatSize(available))
+		sb.WriteProgressf("[git.vet] Preflight OK (disk space: %s free)", preflight.FormatSize(available))
 	}
 
 	// Check for client disconnect before starting heavy work
@@ -267,7 +267,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 
 	// Step 1: Fetch repository (shallow clone)
 	frame := 0
-	sb.WriteProgressf("%s [gitscan] Fetching from %s (shallow clone)...", SpinnerFrames[frame%len(SpinnerFrames)], parsed.Host)
+	sb.WriteProgressf("%s [git.vet] Fetching from %s (shallow clone)...", SpinnerFrames[frame%len(SpinnerFrames)], parsed.Host)
 
 	// Use full path as cache key, and construct proper clone URL
 	cloneURL := parsed.GetCloneURL()
@@ -277,7 +277,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 			return
 		}
 		frame++
-		sb.WriteProgressf("%s [gitscan] %s", SpinnerFrames[frame%len(SpinnerFrames)], progress)
+		sb.WriteProgressf("%s [git.vet] %s", SpinnerFrames[frame%len(SpinnerFrames)], progress)
 	})
 
 	// Check if cancelled during fetch
@@ -296,12 +296,12 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		return
 	}
 
-	sb.WriteProgressf("%s [gitscan] Fetched. %d files", IconSuccess, repo.FileCount)
+	sb.WriteProgressf("%s [git.vet] Fetched. %d files", IconSuccess, repo.FileCount)
 
 	// Step 2: Check for cached scan
 	cachedScan, err := h.db.GetScanByRepoAndCommit(repo.ID, repo.LastCommitSHA)
 	if err == nil && cachedScan != nil {
-		sb.WriteProgressf("%s [gitscan] Using cached scan results", IconSuccess)
+		sb.WriteProgressf("%s [git.vet] Using cached scan results", IconSuccess)
 		h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true)
 		return
 	}
@@ -312,7 +312,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	}
 
 	// Step 3: Run scan
-	sb.WriteProgressf("%s [gitscan] Scanning with opengrep...", SpinnerFrames[frame%len(SpinnerFrames)])
+	sb.WriteProgressf("%s [git.vet] Scanning with opengrep...", SpinnerFrames[frame%len(SpinnerFrames)])
 
 	scanResult, err := h.scanner.Scan(ctx, repo.LocalPath, func(progress scanner.Progress) {
 		// Check for disconnect during scan
@@ -320,7 +320,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 			return
 		}
 		frame++
-		sb.WriteProgressf("%s [gitscan] Scanning: %d/%d files (%d%%)",
+		sb.WriteProgressf("%s [git.vet] Scanning: %d/%d files (%d%%)",
 			SpinnerFrames[frame%len(SpinnerFrames)],
 			progress.FilesScanned, progress.FilesTotal, progress.Percent)
 	})
@@ -340,7 +340,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		return
 	}
 
-	sb.WriteProgressf("%s [gitscan] Scan complete!", IconSuccess)
+	sb.WriteProgressf("%s [git.vet] Scan complete!", IconSuccess)
 
 	// Step 4: Save scan results
 	dbScan := &db.Scan{
@@ -379,7 +379,7 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 
 	// Header
 	report.WriteBoxTop(width)
-	report.WriteBoxLine(sb.Bold("GITSCAN SECURITY REPORT"), width)
+	report.WriteBoxLine(sb.Bold("GIT.VET SECURITY REPORT"), width)
 	report.WriteBoxLine(fmt.Sprintf("Repository: %s", parsed.FullPath), width)
 	report.WriteBoxLine(fmt.Sprintf("Commit: %s", truncate(scan.CommitSHA, 12)), width)
 	report.WriteBoxLine(fmt.Sprintf("Scanned: %d files in %.1fs", scan.FilesScanned, float64(scan.ScanDurationMS)/1000), width)
