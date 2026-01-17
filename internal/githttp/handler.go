@@ -177,7 +177,8 @@ func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r
 	// Start the scan process
 	h.performScan(ctx, sb, parsed, clientIP, startTime, isPrivate)
 
-	// End the connection (intentionally fail the clone for scan-only mode)
+	// Send empty packfile and flush to properly terminate git protocol
+	sb.WriteEmptyPackfile()
 	sb.Flush()
 }
 
@@ -261,7 +262,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 			sb.WriteEmptyLine()
 			return
 		}
-		sb.WriteProgressf("[git.vet] Preflight OK (disk space: %s free)", preflight.FormatSize(available))
+		sb.WriteProgress("[git.vet] Preflight OK")
 	}
 
 	// Check for client disconnect before starting heavy work

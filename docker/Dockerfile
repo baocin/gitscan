@@ -72,10 +72,8 @@ RUN mkdir -p /data/sqlite /data/repos /etc/gitscan/rules \
 # Copy gitscan binary
 COPY --from=builder /gitscan /usr/local/bin/gitscan
 
-# Copy opengrep binary (adjust path based on actual opengrep image structure)
-COPY --from=opengrep-cache /usr/local/bin/opengrep /usr/local/bin/opengrep 2>/dev/null || \
-    COPY --from=opengrep-cache /opengrep /usr/local/bin/opengrep 2>/dev/null || \
-    echo "Warning: opengrep binary not found, will use mock scanner"
+# Copy opengrep binary from cache stage
+COPY --from=opengrep-cache /usr/local/bin/opengrep /usr/local/bin/opengrep
 
 # Make binaries executable
 RUN chmod +x /usr/local/bin/gitscan && \
@@ -88,15 +86,15 @@ WORKDIR /data
 USER gitscan
 
 # Expose ports
-EXPOSE 8080 8443
+EXPOSE 6633 8443
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:6633/health || exit 1
 
 # Default command
 ENTRYPOINT ["/usr/local/bin/gitscan"]
-CMD ["--listen", ":8080", "--db", "/data/sqlite/gitscan.db", "--cache-dir", "/data/repos"]
+CMD ["--listen", ":6633", "--db", "/data/sqlite/gitscan.db", "--cache-dir", "/data/repos"]
 
 # ============================================================================
 # Stage 4: Test base image (for git version tests)

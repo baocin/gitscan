@@ -1,0 +1,104 @@
+name: Test
+
+on:
+  push:
+    branches: [main, claude/*]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Run unit tests
+        run: go test -v ./...
+
+  integration-test:
+    runs-on: ubuntu-latest
+    services:
+      gitscan:
+        image: golang:1.21
+        ports:
+          - 6633:6633
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install opengrep
+        run: |
+          pip3 install opengrep || pip3 install semgrep
+
+      - name: Build server
+        run: go build -o gitscan-server ./cmd/gitscan-server
+
+      - name: Start server
+        run: |
+          ./gitscan-server -listen :6633 -cache-dir /tmp/gitscan-cache &
+          sleep 3
+          curl -sf http://localhost:6633/health || exit 1
+
+      - name: Test health endpoint
+        run: |
+          curl -sf http://localhost:6633/health
+
+      - name: Test version endpoint
+        run: |
+          curl -sf http://localhost:6633/version | jq .
+
+      - name: Test homepage
+        run: |
+          curl -sf http://localhost:6633/ | grep -q "git.vet"
+
+      - name: Test git clone (info/refs)
+        run: |
+          # Test that info/refs endpoint responds with git protocol
+          curl -sf "http://localhost:6633/github.com/OWASP/NodeGoat/info/refs?service=git-upload-pack" | head -c 100
+
+  docker-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -f docker/Dockerfile -t gitscan:test .
+
+      - name: Run container
+        run: |
+          docker run -d --name gitscan-test -p 6633:6633 gitscan:test
+          sleep 5
+
+      - name: Test health in Docker
+        run: |
+          curl -sf http://localhost:6633/health
+
+      - name: Test version in Docker
+        run: |
+          curl -sf http://localhost:6633/version | jq .
+
+      - name: Test git clone in Docker
+        run: |
+          # Test info/refs endpoint responds with git protocol
+          response=$(curl -sf "http://localhost:6633/github.com/OWASP/NodeGoat/info/refs?service=git-upload-pack")
+          echo "$response" | head -c 100
+          # Verify it contains git-upload-pack service announcement
+          echo "$response" | grep -q "git-upload-pack" || exit 1
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop gitscan-test || true
+          docker rm gitscan-test || true

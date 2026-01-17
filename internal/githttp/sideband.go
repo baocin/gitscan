@@ -98,6 +98,40 @@ func (s *SidebandWriter) writePacket(band byte, data string) error {
 	return err
 }
 
+// WriteEmptyPackfile sends an empty packfile via sideband data channel
+// This is required to properly terminate the git protocol after sending progress messages
+func (s *SidebandWriter) WriteEmptyPackfile() error {
+	// Empty packfile structure:
+	// - 4 bytes: "PACK" signature
+	// - 4 bytes: version 2 (big-endian)
+	// - 4 bytes: object count 0 (big-endian)
+	// - 20 bytes: SHA-1 checksum of the header
+
+	// Pre-computed empty packfile (header + SHA-1 of header)
+	// SHA-1("PACK\x00\x00\x00\x02\x00\x00\x00\x00") = 029d08823bd8a8eab510ad6ac75c823cfd3ed31e
+	emptyPack := []byte{
+		'P', 'A', 'C', 'K', // Signature
+		0, 0, 0, 2, // Version 2
+		0, 0, 0, 0, // 0 objects
+		// SHA-1 checksum
+		0x02, 0x9d, 0x08, 0x82, 0x3b, 0xd8, 0xa8, 0xea,
+		0xb5, 0x10, 0xad, 0x6a, 0xc7, 0x5c, 0x82, 0x3c,
+		0xfd, 0x3e, 0xd3, 0x1e,
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Send pack data via sideband channel 1
+	length := len(emptyPack) + 5
+	pkt := fmt.Sprintf("%04x%c", length, SidebandData)
+	if _, err := s.w.Write([]byte(pkt)); err != nil {
+		return err
+	}
+	_, err := s.w.Write(emptyPack)
+	return err
+}
+
 // Flush writes a flush packet (0000) to signal end of stream
 func (s *SidebandWriter) Flush() error {
 	s.mu.Lock()
