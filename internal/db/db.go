@@ -35,7 +35,33 @@ func New(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
-	return &DB{conn: conn}, nil
+	// Run migrations
+	db := &DB{conn: conn}
+	if err := db.runMigrations(); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	return db, nil
+}
+
+// runMigrations applies any pending database migrations
+func (db *DB) runMigrations() error {
+	// Add license column to repos table if it doesn't exist
+	_, err := db.conn.Exec(`ALTER TABLE repos ADD COLUMN license TEXT`)
+	if err != nil {
+		// Ignore error if column already exists
+		if !isColumnExistsError(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+// isColumnExistsError checks if the error is a "column already exists" error
+func isColumnExistsError(err error) bool {
+	return err != nil && (err.Error() == "duplicate column name: license" ||
+		err.Error() == "SQLITE_ERROR: duplicate column name: license")
 }
 
 // Close closes the database connection
@@ -53,6 +79,7 @@ type Repo struct {
 	LastFetchedAt time.Time
 	SizeBytes     int64
 	FileCount     int
+	License       string
 	CreatedAt     time.Time
 }
 
@@ -95,17 +122,17 @@ type Request struct {
 func (db *DB) GetRepoByURL(url string) (*Repo, error) {
 	row := db.conn.QueryRow(`
 		SELECT id, url, local_path, default_branch, last_commit_sha,
-		       last_fetched_at, size_bytes, file_count, created_at
+		       last_fetched_at, size_bytes, file_count, license, created_at
 		FROM repos WHERE url = ?
 	`, url)
 
 	var r Repo
 	var lastFetched, created sql.NullTime
-	var defaultBranch, lastCommit sql.NullString
+	var defaultBranch, lastCommit, license sql.NullString
 	var sizeBytes, fileCount sql.NullInt64
 
 	err := row.Scan(&r.ID, &r.URL, &r.LocalPath, &defaultBranch, &lastCommit,
-		&lastFetched, &sizeBytes, &fileCount, &created)
+		&lastFetched, &sizeBytes, &fileCount, &license, &created)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -118,6 +145,7 @@ func (db *DB) GetRepoByURL(url string) (*Repo, error) {
 	r.LastFetchedAt = lastFetched.Time
 	r.SizeBytes = sizeBytes.Int64
 	r.FileCount = int(fileCount.Int64)
+	r.License = license.String
 	r.CreatedAt = created.Time
 
 	return &r, nil
@@ -148,6 +176,12 @@ func (db *DB) UpdateRepoFetched(id int64, commitSHA string, sizeBytes int64, fil
 		SET last_commit_sha = ?, last_fetched_at = ?, size_bytes = ?, file_count = ?
 		WHERE id = ?
 	`, commitSHA, time.Now(), sizeBytes, fileCount, id)
+	return err
+}
+
+// UpdateRepoLicense updates the repo's detected license
+func (db *DB) UpdateRepoLicense(id int64, license string) error {
+	_, err := db.conn.Exec(`UPDATE repos SET license = ? WHERE id = ?`, license, id)
 	return err
 }
 
@@ -261,6 +295,7 @@ func nullString(s string) interface{} {
 type ScanWithRepo struct {
 	Scan
 	RepoURL string
+	License string
 }
 
 // GetScanByCommitPrefix retrieves a scan by commit SHA prefix (for report URLs)
@@ -269,7 +304,7 @@ func (db *DB) GetScanByCommitPrefix(commitPrefix string) (*ScanWithRepo, error) 
 		SELECT s.id, s.repo_id, s.commit_sha, s.results_json, s.summary_json,
 		       s.critical_count, s.high_count, s.medium_count, s.low_count, s.info_count,
 		       s.files_scanned, s.scan_duration_ms, s.opengrep_version, s.rules_version, s.created_at,
-		       r.url
+		       r.url, r.license
 		FROM scans s
 		JOIN repos r ON s.repo_id = r.id
 		WHERE s.commit_sha LIKE ?
@@ -280,12 +315,12 @@ func (db *DB) GetScanByCommitPrefix(commitPrefix string) (*ScanWithRepo, error) 
 	var s ScanWithRepo
 	var summaryJSON sql.NullString
 	var filesScanned sql.NullInt64
-	var openGrepVer, rulesVer sql.NullString
+	var openGrepVer, rulesVer, license sql.NullString
 
 	err := row.Scan(&s.ID, &s.RepoID, &s.CommitSHA, &s.ResultsJSON, &summaryJSON,
 		&s.CriticalCount, &s.HighCount, &s.MediumCount, &s.LowCount, &s.InfoCount,
 		&filesScanned, &s.ScanDurationMS, &openGrepVer, &rulesVer, &s.CreatedAt,
-		&s.RepoURL)
+		&s.RepoURL, &license)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -297,6 +332,7 @@ func (db *DB) GetScanByCommitPrefix(commitPrefix string) (*ScanWithRepo, error) 
 	s.FilesScanned = int(filesScanned.Int64)
 	s.OpenGrepVersion = openGrepVer.String
 	s.RulesVersion = rulesVer.String
+	s.License = license.String
 
 	return &s, nil
 }

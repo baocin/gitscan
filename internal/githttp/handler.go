@@ -401,6 +401,9 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	report.WriteBoxLine(sb.Bold("GIT.VET SECURITY REPORT"), width)
 	report.WriteBoxLine(fmt.Sprintf("Repository: %s", parsed.FullPath), width)
 	report.WriteBoxLine(fmt.Sprintf("Commit: %s", truncate(scan.CommitSHA, 12)), width)
+	if repo.License != "" {
+		report.WriteBoxLine(fmt.Sprintf("License: %s", repo.License), width)
+	}
 	report.WriteBoxLine(fmt.Sprintf("Scanned: %d files in %.1fs", scan.FilesScanned, float64(scan.ScanDurationMS)/1000), width)
 	if cacheHit {
 		report.WriteBoxLine(sb.Color(Cyan, "(cached result)"), width)
