@@ -262,3 +262,71 @@ func TestFindingsJSONCanBeUnmarshaledAsArray(t *testing.T) {
 		}
 	}
 }
+
+func TestCalculateSecurityScore(t *testing.T) {
+	tests := []struct {
+		critical, high, medium, low int
+		expectedScore               int
+	}{
+		{0, 0, 0, 0, 100},    // Perfect score
+		{1, 0, 0, 0, 75},     // 1 critical = -25
+		{0, 1, 0, 0, 85},     // 1 high = -15
+		{0, 0, 1, 0, 95},     // 1 medium = -5
+		{0, 0, 0, 1, 99},     // 1 low = -1
+		{1, 1, 1, 1, 54},     // -25 -15 -5 -1 = -46, so 54
+		{2, 2, 2, 2, 8},      // -50 -30 -10 -2 = -92, so 8
+		{4, 0, 0, 0, 0},      // 4 critical = -100, clamped to 0
+		{0, 0, 0, 100, 0},    // 100 low = -100, clamped to 0
+		{10, 10, 10, 10, 0},  // Way over, clamped to 0
+	}
+
+	for _, tc := range tests {
+		score := CalculateSecurityScore(tc.critical, tc.high, tc.medium, tc.low)
+		if score != tc.expectedScore {
+			t.Errorf("CalculateSecurityScore(%d, %d, %d, %d) = %d, expected %d",
+				tc.critical, tc.high, tc.medium, tc.low, score, tc.expectedScore)
+		}
+	}
+}
+
+func TestScoreGrade(t *testing.T) {
+	tests := []struct {
+		score         int
+		expectedGrade string
+	}{
+		{100, "A"},
+		{95, "A"},
+		{90, "A"},
+		{89, "B"},
+		{80, "B"},
+		{79, "C"},
+		{70, "C"},
+		{69, "D"},
+		{60, "D"},
+		{59, "F"},
+		{50, "F"},
+		{0, "F"},
+	}
+
+	for _, tc := range tests {
+		grade := ScoreGrade(tc.score)
+		if grade != tc.expectedGrade {
+			t.Errorf("ScoreGrade(%d) = %q, expected %q", tc.score, grade, tc.expectedGrade)
+		}
+	}
+}
+
+func TestSecurityScoreInParsedResult(t *testing.T) {
+	// Verify security score is calculated during SARIF parsing
+	result, err := parseSARIFOutput(sampleSARIF, 100, time.Now())
+	if err != nil {
+		t.Fatalf("Failed to parse SARIF: %v", err)
+	}
+
+	// Sample SARIF has: 1 critical (error), 1 high (warning)
+	// Expected: 100 - 25 - 15 = 60
+	expectedScore := CalculateSecurityScore(result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount)
+	if result.SecurityScore != expectedScore {
+		t.Errorf("SecurityScore = %d, expected %d", result.SecurityScore, expectedScore)
+	}
+}

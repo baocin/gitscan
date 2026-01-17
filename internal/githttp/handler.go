@@ -371,6 +371,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		MediumCount:    scanResult.MediumCount,
 		LowCount:       scanResult.LowCount,
 		InfoCount:      scanResult.InfoCount,
+		SecurityScore:  scanResult.SecurityScore,
 		FilesScanned:   scanResult.FilesScanned,
 		ScanDurationMS: scanResult.Duration.Milliseconds(),
 	}
@@ -408,6 +409,25 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	if cacheHit {
 		report.WriteBoxLine(sb.Color(Cyan, "(cached result)"), width)
 	}
+
+	// Security Score
+	report.WriteBoxMiddle(width)
+	grade := scanner.ScoreGrade(scan.SecurityScore)
+	var scoreColor string
+	switch {
+	case scan.SecurityScore >= 90:
+		scoreColor = Green
+	case scan.SecurityScore >= 70:
+		scoreColor = Yellow
+	case scan.SecurityScore >= 50:
+		scoreColor = Yellow
+	default:
+		scoreColor = Red
+	}
+	scoreLine := fmt.Sprintf("Security Score: %s  %s",
+		sb.Color(scoreColor, fmt.Sprintf("%d/100", scan.SecurityScore)),
+		sb.Color(scoreColor, fmt.Sprintf("(%s)", grade)))
+	report.WriteBoxLine(scoreLine, width)
 
 	// Summary line
 	report.WriteBoxMiddle(width)
