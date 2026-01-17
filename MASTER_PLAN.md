@@ -4,10 +4,14 @@
 
 ## Overview
 
-GitScan is a security scanning tool that works with standard `git clone` commands - no installation required on the client. Users simply prefix their clone URL:
+GitScan is a security scanning tool that works with standard `git clone` commands - no installation required on the client. Users simply replace the git host with gitscan.io and include the original host in the path:
 
 ```bash
-git clone https://gitscan.github.com/user/repo
+# Instead of:
+git clone https://github.com/user/repo
+
+# Use:
+git clone https://gitscan.io/github.com/user/repo
 ```
 
 Instead of cloning, they receive a security scan report displayed directly in their terminal.
@@ -46,7 +50,7 @@ Git's smart HTTP protocol includes a **sideband channel** for sending progress m
 ### Standard Flow (Report Only)
 
 ```
-$ git clone https://gitscan.github.com/facebook/react
+$ git clone https://gitscan.io/github.com/facebook/react
 Cloning into 'react'...
 remote:
 remote: ⠋ [gitscan] Fetching repository...
@@ -83,10 +87,18 @@ fatal: Could not read from remote repository.
 
 | URL Pattern | Behavior |
 |-------------|----------|
-| `gitscan.github.com/user/repo` | Scan and report (fail clone) |
-| `gitscan.github.com/clone/user/repo` | Scan, report, then complete clone |
-| `gitscan.github.com/plain/user/repo` | Report without box-drawing/unicode |
-| `gitscan.github.com/json/user/repo` | Output raw JSON report |
+| `gitscan.io/github.com/user/repo` | Scan and report (fail clone) |
+| `gitscan.io/clone/github.com/user/repo` | Scan, report, then complete clone |
+| `gitscan.io/plain/github.com/user/repo` | Report without box-drawing/unicode |
+| `gitscan.io/json/github.com/user/repo` | Output raw JSON report |
+
+### Supported Git Hosts
+
+| Host | Path Format |
+|------|-------------|
+| GitHub | `gitscan.io/github.com/owner/repo` |
+| GitLab | `gitscan.io/gitlab.com/owner/repo` |
+| Bitbucket | `gitscan.io/bitbucket.org/owner/repo` |
 
 ---
 
@@ -116,7 +128,7 @@ This check is performed:
 When a private repo is detected (user provides authentication), we show a 10-second countdown warning:
 
 ```
-$ git clone https://gitscan.github.com/user/private-repo
+$ git clone https://gitscan.io/github.com/user/private-repo
 Cloning into 'private-repo'...
 remote:
 remote: ╔══════════════════════════════════════════════════════════════════╗
@@ -140,23 +152,26 @@ remote: Starting scan in 9 seconds... (Ctrl+C to cancel)
 
 ### Preflight Checks
 
-Before cloning, we perform fast checks:
+Before/during cloning, we perform resource checks:
 
 1. **Disk Space**: Verify server has sufficient free space
-2. **Repo Size**: Query GitHub API for repo size (avoid cloning huge repos)
+2. **Data Transfer Limit**: Monitor clone progress, abort if >500MB transferred
 3. **Rate Limits**: Check request quotas
 
+**Why no API-based size check?**
+- GitHub, GitLab, Bitbucket all have different APIs
+- Unauthenticated API rate limits are very low (60 req/hour for GitHub)
+- API-reported sizes are often inaccurate (doesn't include LFS, may be stale)
+
+**Transfer-based limiting is better:**
 ```go
-// GitHub API returns repo size in KB
-GET https://api.github.com/repos/{owner}/{repo}
-{
-  "size": 245678,  // KB
-  "private": true,
-  ...
-}
+// Monitor git clone output and abort if too large
+cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", repoURL, localPath)
+// Wrap stdout/stderr to count bytes transferred
+// Abort if threshold exceeded
 ```
 
-Note: GitHub API size is approximate (doesn't include LFS, may be stale).
+This approach works universally across all git hosts without requiring API keys.
 
 ### Queue Management
 
@@ -882,7 +897,7 @@ gitscan/
                     │   Cloudflare    │
                     │   (DNS + CDN)   │
                     │                 │
-                    │ gitscan.github.com → Hetzner IP
+                    │ gitscan.io → Hetzner IP
                     └─────────────────┘
 ```
 
@@ -970,10 +985,9 @@ services:
 
 ## Open Questions
 
-1. **Domain**: Is `gitscan.github.com` achievable? May need `gitscan.io` or similar
-2. **Pricing**: Free tier limits? Paid tiers for higher rate limits?
-3. **Private repos**: OAuth flow complexity - worth it for v1?
-4. **Clone mode**: Should we support actually completing the clone after scan?
+1. **Pricing**: Free tier limits? Paid tiers for higher rate limits?
+2. **Private repos**: OAuth flow complexity - worth it for v1?
+3. **Clone mode**: Should we support actually completing the clone after scan?
 
 ---
 

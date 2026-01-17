@@ -101,12 +101,43 @@ type GitRequest struct {
 	Done        bool
 }
 
+// ParsedPath contains parsed URL components
+type ParsedPath struct {
+	Mode     string // scan, clone, json, plain
+	Host     string // github.com, gitlab.com, etc.
+	Owner    string // repository owner
+	Repo     string // repository name
+	RepoPath string // owner/repo (for convenience)
+	FullPath string // host/owner/repo
+}
+
+// Supported git hosts
+var supportedHosts = map[string]bool{
+	"github.com":    true,
+	"gitlab.com":    true,
+	"bitbucket.org": true,
+}
+
 // ParseRepoPath parses a git repository path from the URL
 // Supports formats:
-//   /owner/repo.git/info/refs
-//   /owner/repo/info/refs
-//   /mode/owner/repo.git/info/refs
+//   /github.com/owner/repo.git/info/refs
+//   /github.com/owner/repo/info/refs
+//   /mode/github.com/owner/repo.git/info/refs
+//
+// Examples:
+//   git clone https://gitscan.io/github.com/facebook/react
+//   git clone https://gitscan.io/json/github.com/facebook/react
+//   git clone https://gitscan.io/gitlab.com/org/project
 func ParseRepoPath(urlPath string) (mode, repoPath string, err error) {
+	parsed, err := ParseRepoPathFull(urlPath)
+	if err != nil {
+		return "", "", err
+	}
+	return parsed.Mode, parsed.RepoPath, nil
+}
+
+// ParseRepoPathFull parses a git repository path and returns full details
+func ParseRepoPathFull(urlPath string) (*ParsedPath, error) {
 	// Remove leading slash
 	path := strings.TrimPrefix(urlPath, "/")
 
@@ -129,23 +160,53 @@ func ParseRepoPath(urlPath string) (mode, repoPath string, err error) {
 		"plain": true,
 	}
 
-	if len(parts) >= 3 && validModes[parts[0]] {
-		mode = parts[0]
-		repoPath = strings.Join(parts[1:], "/")
-	} else if len(parts) >= 2 {
-		mode = "scan" // Default mode
-		repoPath = strings.Join(parts, "/")
-	} else {
-		return "", "", fmt.Errorf("invalid repository path: %s", urlPath)
+	parsed := &ParsedPath{
+		Mode: "scan", // Default mode
 	}
 
-	// Validate repo path format (owner/repo or owner/repo/...)
-	repoParts := strings.Split(repoPath, "/")
-	if len(repoParts) < 2 {
-		return "", "", fmt.Errorf("invalid repository path: need owner/repo format")
+	startIdx := 0
+	if len(parts) > 0 && validModes[parts[0]] {
+		parsed.Mode = parts[0]
+		startIdx = 1
 	}
 
-	return mode, repoPath, nil
+	// Remaining parts should be: host/owner/repo[/...]
+	remaining := parts[startIdx:]
+	if len(remaining) < 3 {
+		return nil, fmt.Errorf("invalid path: need host/owner/repo format (e.g., github.com/user/repo)")
+	}
+
+	// First part should be a supported host
+	parsed.Host = remaining[0]
+	if !supportedHosts[parsed.Host] {
+		return nil, fmt.Errorf("unsupported git host: %s (supported: github.com, gitlab.com, bitbucket.org)", parsed.Host)
+	}
+
+	parsed.Owner = remaining[1]
+	parsed.Repo = remaining[2]
+	parsed.RepoPath = parsed.Owner + "/" + parsed.Repo
+	parsed.FullPath = parsed.Host + "/" + parsed.Owner + "/" + parsed.Repo
+
+	return parsed, nil
+}
+
+// GetCloneURL returns the actual git clone URL for the parsed path
+func (p *ParsedPath) GetCloneURL() string {
+	return fmt.Sprintf("https://%s/%s/%s.git", p.Host, p.Owner, p.Repo)
+}
+
+// GetAPIURL returns the API URL for repo metadata (host-specific)
+func (p *ParsedPath) GetAPIURL() string {
+	switch p.Host {
+	case "github.com":
+		return fmt.Sprintf("https://api.github.com/repos/%s/%s", p.Owner, p.Repo)
+	case "gitlab.com":
+		return fmt.Sprintf("https://gitlab.com/api/v4/projects/%s%%2F%s", p.Owner, p.Repo)
+	case "bitbucket.org":
+		return fmt.Sprintf("https://api.bitbucket.org/2.0/repositories/%s/%s", p.Owner, p.Repo)
+	default:
+		return ""
+	}
 }
 
 // ParseGitRequest parses the request body for git-upload-pack

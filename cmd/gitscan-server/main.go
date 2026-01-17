@@ -81,7 +81,7 @@ func main() {
 	// Initialize preflight checker
 	preflightCfg := preflight.DefaultConfig()
 	preflightChecker := preflight.NewChecker(preflightCfg)
-	log.Printf("Preflight: max repo size %dMB", preflightCfg.MaxRepoSizeKB/1024)
+	log.Printf("Preflight: max transfer %dMB, min free disk %dGB", preflightCfg.MaxTransferBytes/(1024*1024), preflightCfg.MinFreeDiskBytes/(1024*1024*1024))
 
 	// Initialize queue manager
 	queueCfg := queue.DefaultConfig()

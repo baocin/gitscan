@@ -65,18 +65,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Get client IP
 	clientIP := getClientIP(r)
 
-	// Parse the request path
-	mode, repoPath, err := ParseRepoPath(r.URL.Path)
+	// Parse the request path (now includes host: github.com/owner/repo)
+	parsed, err := ParseRepoPathFull(r.URL.Path)
 	if err != nil {
-		http.Error(w, "Invalid repository path", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Detect if this is a private repo request (has auth header)
 	isPrivate := hasAuthHeader(r)
 
-	// Check rate limit
-	if allowed, msg := h.limiter.Allow(clientIP, repoPath); !allowed {
+	// Check rate limit (use full path as identifier)
+	if allowed, msg := h.limiter.Allow(clientIP, parsed.FullPath); !allowed {
 		h.writeRateLimitResponse(w, msg)
 		return
 	}
@@ -90,9 +90,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Handle different endpoints
 	switch {
 	case strings.Contains(r.URL.Path, "/info/refs"):
-		h.handleInfoRefs(ctx, w, r, mode, repoPath, clientIP, startTime, isPrivate)
+		h.handleInfoRefs(ctx, w, r, parsed, clientIP, startTime, isPrivate)
 	case strings.Contains(r.URL.Path, "/git-upload-pack"):
-		h.handleUploadPack(ctx, w, r, mode, repoPath, clientIP, startTime, isPrivate)
+		h.handleUploadPack(ctx, w, r, parsed, clientIP, startTime, isPrivate)
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
 	}
@@ -112,7 +112,7 @@ func hasAuthHeader(r *http.Request) bool {
 }
 
 // handleInfoRefs handles the initial discovery request
-func (h *Handler) handleInfoRefs(ctx context.Context, w http.ResponseWriter, r *http.Request, mode, repoPath, clientIP string, startTime time.Time, isPrivate bool) {
+func (h *Handler) handleInfoRefs(ctx context.Context, w http.ResponseWriter, r *http.Request, parsed *ParsedPath, clientIP string, startTime time.Time, isPrivate bool) {
 	service := r.URL.Query().Get("service")
 	if service != "git-upload-pack" {
 		http.Error(w, "Only git-upload-pack is supported", http.StatusForbidden)
@@ -142,7 +142,7 @@ func (h *Handler) handleInfoRefs(ctx context.Context, w http.ResponseWriter, r *
 }
 
 // handleUploadPack handles the pack negotiation and is where we inject our scan results
-func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r *http.Request, mode, repoPath, clientIP string, startTime time.Time, isPrivate bool) {
+func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r *http.Request, parsed *ParsedPath, clientIP string, startTime time.Time, isPrivate bool) {
 	// Set headers
 	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -155,7 +155,7 @@ func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r
 	}
 
 	// Create sideband writer for streaming output
-	useColors := mode != "plain"
+	useColors := parsed.Mode != "plain"
 	sb := NewSidebandWriter(w, useColors)
 
 	// For private repos, show warning countdown
@@ -171,7 +171,7 @@ func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r
 	}
 
 	// Start the scan process
-	h.performScan(ctx, sb, mode, repoPath, clientIP, startTime, isPrivate)
+	h.performScan(ctx, sb, parsed, clientIP, startTime, isPrivate)
 
 	// End the connection (intentionally fail the clone for scan-only mode)
 	sb.Flush()
@@ -235,13 +235,13 @@ func checkClientDisconnected(ctx context.Context) bool {
 }
 
 // performScan fetches the repo, scans it, and writes results via sideband
-func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, mode, repoPath, clientIP string, startTime time.Time, isPrivate bool) {
+func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *ParsedPath, clientIP string, startTime time.Time, isPrivate bool) {
 	report := NewReportWriter(sb)
 	boxWidth := 66
 
 	sb.WriteEmptyLine()
 
-	// Step 0: Preflight checks
+	// Step 0: Preflight checks (disk space only, no API calls)
 	if h.preflight != nil {
 		sb.WriteProgress("[gitscan] Running preflight checks...")
 
@@ -257,23 +257,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, mode, rep
 			sb.WriteEmptyLine()
 			return
 		}
-
-		// Check repo size via GitHub API
-		repoInfo, _ := h.preflight.CheckRepo(ctx, repoPath)
-		if repoInfo != nil && repoInfo.SizeKB > 0 {
-			ok, reason := h.preflight.CheckRepoSize(repoInfo)
-			if !ok {
-				sb.WriteEmptyLine()
-				report.WriteBoxTop(boxWidth)
-				report.WriteBoxLine(sb.Color(Red, "ERROR: Repository too large"), boxWidth)
-				report.WriteBoxLine(reason, boxWidth)
-				report.WriteBoxLine("Consider using a smaller repository or paid tier.", boxWidth)
-				report.WriteBoxBottom(boxWidth)
-				sb.WriteEmptyLine()
-				return
-			}
-			sb.WriteProgressf("[gitscan] Repo size: ~%s", preflight.FormatSize(repoInfo.SizeBytes))
-		}
+		sb.WriteProgressf("[gitscan] Preflight OK (disk space: %s free)", preflight.FormatSize(available))
 	}
 
 	// Check for client disconnect before starting heavy work
@@ -283,9 +267,11 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, mode, rep
 
 	// Step 1: Fetch repository (shallow clone)
 	frame := 0
-	sb.WriteProgressf("%s [gitscan] Fetching repository (shallow clone)...", SpinnerFrames[frame%len(SpinnerFrames)])
+	sb.WriteProgressf("%s [gitscan] Fetching from %s (shallow clone)...", SpinnerFrames[frame%len(SpinnerFrames)], parsed.Host)
 
-	repo, err := h.cache.FetchRepo(ctx, repoPath, func(progress string) {
+	// Use full path as cache key, and construct proper clone URL
+	cloneURL := parsed.GetCloneURL()
+	repo, err := h.cache.FetchRepo(ctx, parsed.FullPath, cloneURL, func(progress string) {
 		// Check for disconnect during fetch
 		if checkClientDisconnected(ctx) {
 			return
@@ -316,7 +302,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, mode, rep
 	cachedScan, err := h.db.GetScanByRepoAndCommit(repo.ID, repo.LastCommitSHA)
 	if err == nil && cachedScan != nil {
 		sb.WriteProgressf("%s [gitscan] Using cached scan results", IconSuccess)
-		h.writeScanReport(sb, report, repoPath, repo, cachedScan, boxWidth, true)
+		h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true)
 		return
 	}
 
@@ -372,15 +358,15 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, mode, rep
 	h.db.CreateScan(dbScan)
 
 	// Step 5: Write report
-	h.writeScanReport(sb, report, repoPath, repo, dbScan, boxWidth, false)
+	h.writeScanReport(sb, report, parsed, repo, dbScan, boxWidth, false)
 
 	// Log request
 	responseTime := time.Since(startTime)
 	h.db.LogRequest(&db.Request{
 		IP:             clientIP,
-		RepoURL:        repoPath,
+		RepoURL:        parsed.FullPath,
 		CommitSHA:      repo.LastCommitSHA,
-		RequestMode:    mode,
+		RequestMode:    parsed.Mode,
 		ScanID:         &dbScan.ID,
 		CacheHit:       false,
 		ResponseTimeMS: responseTime.Milliseconds(),
@@ -388,13 +374,13 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, mode, rep
 }
 
 // writeScanReport writes the formatted scan report via sideband
-func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, repoPath string, repo *cache.CachedRepo, scan *db.Scan, width int, cacheHit bool) {
+func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, parsed *ParsedPath, repo *cache.CachedRepo, scan *db.Scan, width int, cacheHit bool) {
 	sb.WriteEmptyLine()
 
 	// Header
 	report.WriteBoxTop(width)
 	report.WriteBoxLine(sb.Bold("GITSCAN SECURITY REPORT"), width)
-	report.WriteBoxLine(fmt.Sprintf("Repository: %s", repoPath), width)
+	report.WriteBoxLine(fmt.Sprintf("Repository: %s", parsed.FullPath), width)
 	report.WriteBoxLine(fmt.Sprintf("Commit: %s", truncate(scan.CommitSHA, 12)), width)
 	report.WriteBoxLine(fmt.Sprintf("Scanned: %d files in %.1fs", scan.FilesScanned, float64(scan.ScanDurationMS)/1000), width)
 	if cacheHit {
@@ -417,7 +403,9 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, repo
 	// Footer
 	report.WriteBoxMiddle(width)
 	report.WriteBoxLine(fmt.Sprintf("Full report: https://gitscan.io/r/%s", truncate(scan.CommitSHA, 8)), width)
-	report.WriteBoxLine(fmt.Sprintf("To clone: git clone https://github.com/%s", repoPath), width)
+	// Show the actual clone URL (e.g., https://github.com/user/repo)
+	cloneURL := fmt.Sprintf("https://%s/%s/%s", parsed.Host, parsed.Owner, parsed.Repo)
+	report.WriteBoxLine(fmt.Sprintf("To clone: git clone %s", cloneURL), width)
 	report.WriteBoxBottom(width)
 
 	sb.WriteEmptyLine()
