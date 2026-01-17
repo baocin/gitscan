@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scan Report - git.vet</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --bg-secondary: #161b22;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red: #f85149;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        header {
+            padding: 24px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .logo span {
+            color: var(--accent);
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-left: 32px;
+            font-size: 0.95rem;
+        }
+
+        .report-container {
+            padding: 60px 0;
+        }
+
+        .report-header {
+            margin-bottom: 40px;
+        }
+
+        .report-header h1 {
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
+
+        .report-id {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-muted);
+        }
+
+        .report-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 32px;
+        }
+
+        .report-placeholder {
+            text-align: center;
+            padding: 60px;
+            color: var(--text-muted);
+        }
+
+        footer {
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container header-content">
+            <a href="/" class="logo">git<span>.vet</span></a>
+            <nav>
+                <a href="/pricing">Pricing</a>
+                <a href="https://github.com/baocin/gitscan">GitHub</a>
+            </nav>
+        </div>
+    </header>
+
+    <section class="report-container">
+        <div class="container">
+            <div class="report-header">
+                <h1>Scan Report</h1>
+                <p class="report-id">Report ID: {{.ReportID}}</p>
+            </div>
+            <div class="report-card">
+                <div class="report-placeholder">
+                    <p>Full web reports coming soon.</p>
+                    <p>For now, run the scan via git clone to see results in your terminal.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>
+                <a href="https://github.com/baocin/gitscan">Open Source</a> ·
+                Powered by <a href="https://github.com/opengrep/opengrep">Opengrep</a>
+            </p>
+        </div>
+    </footer>
+</body>
+</html>

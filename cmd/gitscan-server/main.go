@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/baocin/gitscan/internal/queue"
 	"github.com/baocin/gitscan/internal/ratelimit"
 	"github.com/baocin/gitscan/internal/scanner"
+	"github.com/baocin/gitscan/internal/web"
 )
 
 // Version information (set at build time)
@@ -92,6 +94,12 @@ func main() {
 	handlerCfg := githttp.DefaultConfig()
 	gitHandler := githttp.NewHandler(database, repoCache, scan, limiter, preflightChecker, queueManager, handlerCfg)
 
+	// Create web handler for marketing pages
+	webHandler, err := web.NewHandler()
+	if err != nil {
+		log.Fatalf("Failed to initialize web handler: %v", err)
+	}
+
 	// Set up HTTP server with routes
 	mux := http.NewServeMux()
 
@@ -107,8 +115,49 @@ func main() {
 		fmt.Fprintf(w, `{"version":"%s","build_time":"%s","git_commit":"%s"}`, Version, BuildTime, GitCommit)
 	})
 
-	// Git protocol handler (catch-all for repo paths)
-	mux.Handle("/", gitHandler)
+	// Web pages
+	mux.HandleFunc("/pricing", webHandler.ServePricing)
+	mux.HandleFunc("/r/", webHandler.ServeReport)
+
+	// Smart router: web pages vs git protocol
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		// Serve homepage at root
+		if path == "/" {
+			webHandler.ServeHome(w, r)
+			return
+		}
+
+		// Check if this is a git request (starts with supported host or mode)
+		gitHosts := []string{"github.com", "gitlab.com", "bitbucket.org"}
+		gitModes := []string{"scan", "clone", "json", "plain"}
+
+		pathPart := strings.TrimPrefix(path, "/")
+		firstPart := strings.Split(pathPart, "/")[0]
+
+		isGitRequest := false
+		for _, host := range gitHosts {
+			if firstPart == host {
+				isGitRequest = true
+				break
+			}
+		}
+		for _, mode := range gitModes {
+			if firstPart == mode {
+				isGitRequest = true
+				break
+			}
+		}
+
+		if isGitRequest {
+			gitHandler.ServeHTTP(w, r)
+			return
+		}
+
+		// Default: 404
+		http.NotFound(w, r)
+	})
 
 	// Create HTTP server
 	httpServer := &http.Server{

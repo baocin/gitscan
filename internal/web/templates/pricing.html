@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pricing - git.vet</title>
+    <meta name="description" content="git.vet pricing plans for security scanning">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --bg-secondary: #161b22;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red: #f85149;
+            --purple: #a371f7;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        header {
+            padding: 24px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .logo span {
+            color: var(--accent);
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-left: 32px;
+            font-size: 0.95rem;
+            transition: color 0.2s;
+        }
+
+        nav a:hover {
+            color: var(--text);
+        }
+
+        .pricing-header {
+            padding: 80px 0 60px;
+            text-align: center;
+        }
+
+        .pricing-header h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+        }
+
+        .pricing-header p {
+            color: var(--text-muted);
+            font-size: 1.2rem;
+        }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 32px;
+            padding-bottom: 100px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .pricing-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 40px;
+            position: relative;
+        }
+
+        .pricing-card.featured {
+            border-color: var(--accent);
+        }
+
+        .pricing-card.featured::before {
+            content: 'Most Popular';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--accent);
+            color: var(--bg);
+            padding: 4px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .pricing-card h2 {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+        }
+
+        .pricing-card .price {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .pricing-card .price span {
+            font-size: 1rem;
+            font-weight: 400;
+            color: var(--text-muted);
+        }
+
+        .pricing-card .description {
+            color: var(--text-muted);
+            margin-bottom: 32px;
+        }
+
+        .pricing-card ul {
+            list-style: none;
+            margin-bottom: 32px;
+        }
+
+        .pricing-card li {
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .pricing-card li:last-child {
+            border-bottom: none;
+        }
+
+        .pricing-card li::before {
+            content: '✓';
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        .pricing-btn {
+            display: block;
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .pricing-btn.primary {
+            background: var(--accent);
+            color: var(--bg);
+        }
+
+        .pricing-btn.primary:hover {
+            background: #79b8ff;
+        }
+
+        .pricing-btn.secondary {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+
+        .pricing-btn.secondary:hover {
+            border-color: var(--text-muted);
+        }
+
+        footer {
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        @media (max-width: 768px) {
+            .pricing-header h1 {
+                font-size: 2rem;
+            }
+            nav {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container header-content">
+            <a href="/" class="logo">git<span>.vet</span></a>
+            <nav>
+                <a href="/pricing">Pricing</a>
+                <a href="https://github.com/baocin/gitscan">GitHub</a>
+                <a href="https://github.com/baocin/gitscan/blob/main/MASTER_PLAN.md">Docs</a>
+            </nav>
+        </div>
+    </header>
+
+    <section class="pricing-header">
+        <div class="container">
+            <h1>Simple Pricing</h1>
+            <p>Start scanning for free. Upgrade for more power.</p>
+        </div>
+    </section>
+
+    <section class="pricing-grid container">
+        <div class="pricing-card">
+            <h2>Free</h2>
+            <div class="price">$0</div>
+            <p class="description">For open source projects</p>
+            <ul>
+                <li>Unlimited public repo scans</li>
+                <li>30 scans per hour</li>
+                <li>10-second delay for private repos</li>
+                <li>Community support</li>
+            </ul>
+            <a href="/" class="pricing-btn secondary">Get Started</a>
+        </div>
+
+        <div class="pricing-card featured">
+            <h2>Pro</h2>
+            <div class="price">$19<span>/month</span></div>
+            <p class="description">For professional developers</p>
+            <ul>
+                <li>Everything in Free</li>
+                <li>No delay for private repos</li>
+                <li>500 private repo scans/month</li>
+                <li>Priority queue</li>
+                <li>Email support</li>
+            </ul>
+            <a href="#" class="pricing-btn primary" id="checkout-pro">Subscribe</a>
+        </div>
+
+        <div class="pricing-card">
+            <h2>Team</h2>
+            <div class="price">$99<span>/month</span></div>
+            <p class="description">For teams and organizations</p>
+            <ul>
+                <li>Everything in Pro</li>
+                <li>Unlimited private repo scans</li>
+                <li>Team dashboard</li>
+                <li>Custom rules</li>
+                <li>Dedicated support</li>
+            </ul>
+            <a href="mailto:team@git.vet" class="pricing-btn secondary">Contact Us</a>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>
+                <a href="https://github.com/baocin/gitscan">Open Source</a> ·
+                Powered by <a href="https://github.com/opengrep/opengrep">Opengrep</a> ·
+                Built with Go
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // Stripe checkout integration placeholder
+        document.getElementById('checkout-pro')?.addEventListener('click', function(e) {
+            e.preventDefault();
+            // TODO: Integrate Stripe Checkout
+            alert('Stripe checkout coming soon!');
+        });
+    </script>
+</body>
+</html>
