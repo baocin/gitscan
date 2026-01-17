@@ -26,7 +26,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		PrivateRepoDelaySeconds: 10,
-		StripeLink:              "https://gitscan.io/pricing",
+		StripeLink:              "https://git.vet/pricing",
 		MaxRepoSizeKB:           512000, // 500MB
 	}
 }
@@ -402,7 +402,7 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 
 	// Footer
 	report.WriteBoxMiddle(width)
-	report.WriteBoxLine(fmt.Sprintf("Full report: https://gitscan.io/r/%s", truncate(scan.CommitSHA, 8)), width)
+	report.WriteBoxLine(fmt.Sprintf("Full report: https://git.vet/r/%s", truncate(scan.CommitSHA, 8)), width)
 	// Show the actual clone URL (e.g., https://github.com/user/repo)
 	cloneURL := fmt.Sprintf("https://%s/%s/%s", parsed.Host, parsed.Owner, parsed.Repo)
 	report.WriteBoxLine(fmt.Sprintf("To clone: git clone %s", cloneURL), width)

@@ -125,9 +125,9 @@ var supportedHosts = map[string]bool{
 //   /mode/github.com/owner/repo.git/info/refs
 //
 // Examples:
-//   git clone https://gitscan.io/github.com/facebook/react
-//   git clone https://gitscan.io/json/github.com/facebook/react
-//   git clone https://gitscan.io/gitlab.com/org/project
+//   git clone https://git.vet/github.com/facebook/react
+//   git clone https://git.vet/json/github.com/facebook/react
+//   git clone https://git.vet/gitlab.com/org/project
 func ParseRepoPath(urlPath string) (mode, repoPath string, err error) {
 	parsed, err := ParseRepoPathFull(urlPath)
 	if err != nil {

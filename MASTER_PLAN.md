@@ -4,14 +4,14 @@
 
 ## Overview
 
-GitScan is a security scanning tool that works with standard `git clone` commands - no installation required on the client. Users simply replace the git host with gitscan.io and include the original host in the path:
+GitScan is a security scanning tool that works with standard `git clone` commands - no installation required on the client. Users simply replace the git host with git.vet and include the original host in the path:
 
 ```bash
 # Instead of:
 git clone https://github.com/user/repo
 
 # Use:
-git clone https://gitscan.io/github.com/user/repo
+git clone https://git.vet/github.com/user/repo
 ```
 
 Instead of cloning, they receive a security scan report displayed directly in their terminal.
@@ -50,7 +50,7 @@ Git's smart HTTP protocol includes a **sideband channel** for sending progress m
 ### Standard Flow (Report Only)
 
 ```
-$ git clone https://gitscan.io/github.com/facebook/react
+$ git clone https://git.vet/github.com/facebook/react
 Cloning into 'react'...
 remote:
 remote: ⠋ [gitscan] Fetching repository...
@@ -76,7 +76,7 @@ remote: ║  HIGH: Unsafe innerHTML assignment                               ║
 remote: ║  └─ fixtures/dom/src/components/Editor.js:156                    ║
 remote: ║                                                                  ║
 remote: ╠══════════════════════════════════════════════════════════════════╣
-remote: ║  Full report: https://gitscan.io/r/fb-react-a1b2c3               ║
+remote: ║  Full report: https://git.vet/r/fb-react-a1b2c3               ║
 remote: ║  To clone: git clone https://github.com/facebook/react           ║
 remote: ╚══════════════════════════════════════════════════════════════════╝
 remote:
@@ -87,18 +87,18 @@ fatal: Could not read from remote repository.
 
 | URL Pattern | Behavior |
 |-------------|----------|
-| `gitscan.io/github.com/user/repo` | Scan and report (fail clone) |
-| `gitscan.io/clone/github.com/user/repo` | Scan, report, then complete clone |
-| `gitscan.io/plain/github.com/user/repo` | Report without box-drawing/unicode |
-| `gitscan.io/json/github.com/user/repo` | Output raw JSON report |
+| `git.vet/github.com/user/repo` | Scan and report (fail clone) |
+| `git.vet/clone/github.com/user/repo` | Scan, report, then complete clone |
+| `git.vet/plain/github.com/user/repo` | Report without box-drawing/unicode |
+| `git.vet/json/github.com/user/repo` | Output raw JSON report |
 
 ### Supported Git Hosts
 
 | Host | Path Format |
 |------|-------------|
-| GitHub | `gitscan.io/github.com/owner/repo` |
-| GitLab | `gitscan.io/gitlab.com/owner/repo` |
-| Bitbucket | `gitscan.io/bitbucket.org/owner/repo` |
+| GitHub | `git.vet/github.com/owner/repo` |
+| GitLab | `git.vet/gitlab.com/owner/repo` |
+| Bitbucket | `git.vet/bitbucket.org/owner/repo` |
 
 ---
 
@@ -128,7 +128,7 @@ This check is performed:
 When a private repo is detected (user provides authentication), we show a 10-second countdown warning:
 
 ```
-$ git clone https://gitscan.io/github.com/user/private-repo
+$ git clone https://git.vet/github.com/user/private-repo
 Cloning into 'private-repo'...
 remote:
 remote: ╔══════════════════════════════════════════════════════════════════╗
@@ -139,7 +139,7 @@ remote: ║  Code is deleted immediately after scanning.                     ║
 remote: ║                                                                  ║
 remote: ║  Press Ctrl+C now to cancel if you do not consent.               ║
 remote: ╠══════════════════════════════════════════════════════════════════╣
-remote: ║  Skip this delay: https://gitscan.io/pricing                     ║
+remote: ║  Skip this delay: https://git.vet/pricing                     ║
 remote: ╚══════════════════════════════════════════════════════════════════╝
 remote:
 remote: Starting scan in 10 seconds... (Ctrl+C to cancel)
@@ -364,7 +364,7 @@ remote:
 remote: ⚠ [gitscan] Rate limit exceeded
 remote:
 remote: You've made too many requests. Please wait a moment.
-remote: If you need higher limits, visit: https://gitscan.io/pricing
+remote: If you need higher limits, visit: https://git.vet/pricing
 remote:
 fatal: Could not read from remote repository.
 ```
@@ -897,7 +897,7 @@ gitscan/
                     │   Cloudflare    │
                     │   (DNS + CDN)   │
                     │                 │
-                    │ gitscan.io → Hetzner IP
+                    │ git.vet → Hetzner IP
                     └─────────────────┘
 ```
 
