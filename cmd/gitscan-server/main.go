@@ -121,6 +121,9 @@ func main() {
 		fmt.Fprintf(w, `{"version":"%s","build_time":"%s","git_commit":"%s"}`, Version, BuildTime, GitCommit)
 	})
 
+	// Static files
+	mux.HandleFunc("/static/", webHandler.ServeStatic)
+
 	// Web pages
 	mux.HandleFunc("/pricing", webHandler.ServePricing)
 	mux.HandleFunc("/r/", webHandler.ServeReport)

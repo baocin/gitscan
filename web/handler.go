@@ -3,6 +3,7 @@ package web
 import (
 	"embed"
 	"html/template"
+	"io/fs"
 	"net/http"
 	"strings"
 )
@@ -10,9 +11,13 @@ import (
 //go:embed templates/*
 var templatesFS embed.FS
 
+//go:embed static/*
+var staticFS embed.FS
+
 // Handler serves web pages (marketing, pricing, reports)
 type Handler struct {
-	templates *template.Template
+	templates    *template.Template
+	staticServer http.Handler
 }
 
 // NewHandler creates a new web handler
@@ -21,7 +26,22 @@ func NewHandler() (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Handler{templates: tmpl}, nil
+
+	// Create static file server
+	staticSub, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		return nil, err
+	}
+
+	return &Handler{
+		templates:    tmpl,
+		staticServer: http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
+	}, nil
+}
+
+// ServeStatic serves static files (favicon, css, js, etc.)
+func (h *Handler) ServeStatic(w http.ResponseWriter, r *http.Request) {
+	h.staticServer.ServeHTTP(w, r)
 }
 
 // ServeHome serves the marketing homepage
