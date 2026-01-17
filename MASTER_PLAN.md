@@ -1075,6 +1075,111 @@ Detect common typosquatting patterns:
 
 ---
 
+## Claude Code Integration
+
+### AI-Assisted Security Scanning
+
+git.vet can be integrated as a **Claude Code skill** that intercepts `git clone` commands before cloning repositories. This enables AI-assisted development workflows where:
+
+1. **Automatic Security Checks**: When Claude Code attempts to clone a repository, the skill intercepts the command and routes it through git.vet first
+2. **Pre-Clone Vulnerability Awareness**: Claude sees the security scan results before the code is cloned, allowing it to warn users about vulnerabilities
+3. **Informed Decision Making**: If critical or high-severity vulnerabilities are found, Claude can:
+   - Alert the user about the security risks
+   - Suggest safer alternatives or forks
+   - Recommend specific security mitigations before proceeding
+   - Optionally block the clone if the risk is too high
+
+### Skill Implementation Concept
+
+```bash
+# Instead of directly running:
+git clone https://github.com/user/repo
+
+# The Claude Code skill would intercept and run:
+git clone https://git.vet/github.com/user/repo
+
+# Claude would then see the security report in the terminal output
+# and can make informed decisions about whether to proceed
+```
+
+### Benefits for AI-Assisted Development
+
+- **Proactive Security**: Security vulnerabilities are surfaced before code enters the development environment
+- **Context for AI**: Claude has security context when helping with code from that repository
+- **Reduced Attack Surface**: Prevents inadvertent cloning of malicious or vulnerable dependencies
+- **Audit Trail**: All scans are logged, providing visibility into what code AI assistants are working with
+
+This integration positions git.vet as a security layer for the emerging AI-assisted development ecosystem.
+
+---
+
+## LLM-TLDR Integration for Semantic Analysis
+
+### Beyond Pattern Matching
+
+While opengrep excels at pattern-based vulnerability detection, [llm-tldr](https://github.com/parcadei/llm-tldr) offers complementary **semantic code analysis** that could detect issues patterns alone cannot find:
+
+- **Authentication Flow Analysis**: Trace JWT validation, session handling, and auth bypass risks across call graphs
+- **Code Smells**: Identify architectural issues like circular dependencies, god classes, and dead code
+- **Data Flow Vulnerabilities**: Track tainted input through the codebase to find injection points
+- **Business Logic Flaws**: Understand control flow to detect authorization gaps and state machine issues
+
+### How llm-tldr Works
+
+llm-tldr uses a five-layer analysis architecture:
+1. **AST Parsing**: Extract function/class structure
+2. **Call Graph Analysis**: Map function relationships and dependencies
+3. **Control Flow Graphs**: Understand execution paths and complexity
+4. **Data Flow Graphs**: Track value propagation through code
+5. **Program Dependence Graphs**: Line-level impact analysis
+
+It achieves ~95% token savings by extracting only relevant structural information, making large codebases accessible to LLMs within context limits.
+
+### Integration Concept
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     git.vet Analysis Pipeline                │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  1. Opengrep Scan          2. llm-tldr Analysis             │
+│     ├─ SAST patterns          ├─ Call graph extraction      │
+│     ├─ Secret detection       ├─ Data flow tracking         │
+│     └─ Known CVEs             └─ Semantic embeddings        │
+│                                                             │
+│                    ↓                                        │
+│         ┌─────────────────────────┐                        │
+│         │  Combined Intelligence  │                        │
+│         │  ─────────────────────  │                        │
+│         │  • Pattern matches      │                        │
+│         │  • Semantic context     │                        │
+│         │  • Flow-based risks     │                        │
+│         └─────────────────────────┘                        │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Potential Use Cases
+
+| Issue Type | Opengrep | llm-tldr | Combined |
+|------------|----------|----------|----------|
+| Hardcoded secrets | Yes | - | Yes |
+| SQL injection | Yes | Better context | Enhanced |
+| Auth bypass | Limited | Yes (flow analysis) | Enhanced |
+| Dead code | - | Yes | Yes |
+| Circular deps | - | Yes | Yes |
+| Taint tracking | Limited | Yes | Enhanced |
+
+### Implementation Notes
+
+- llm-tldr supports: Python, TypeScript, JavaScript, Go, Rust, Java, C, C++, Ruby, PHP, C#, Kotlin, Scala, Swift, Lua, Elixir
+- Background daemon provides ~100ms queries vs 30-second CLI spawns
+- 1024-dimensional embeddings via bge-large-en-v1.5 model enable semantic search
+
+This would position git.vet as a comprehensive code intelligence platform, not just a vulnerability scanner.
+
+---
+
 ## Future Enhancements
 
 ### Phase 2
