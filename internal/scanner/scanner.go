@@ -251,8 +251,16 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	}
 
 	// Parse SARIF output
+	log.Printf("[scanner] Raw output length: %d bytes", len(jsonOutput.String()))
+	if len(jsonOutput.String()) < 500 {
+		log.Printf("[scanner] Raw output: %s", jsonOutput.String())
+	} else {
+		log.Printf("[scanner] Raw output (first 500 chars): %s", jsonOutput.String()[:500])
+	}
+
 	result, err := parseSARIFOutput(jsonOutput.String(), totalFiles, startTime)
 	if err != nil {
+		log.Printf("[scanner] SARIF parse error: %v", err)
 		// If parsing fails, return basic result
 		return &Result{
 			FilesScanned: totalFiles,
