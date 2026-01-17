@@ -99,6 +99,58 @@ fatal: Could not read from remote repository.
 | GitHub | `git.vet/github.com/owner/repo` |
 | GitLab | `git.vet/gitlab.com/owner/repo` |
 | Bitbucket | `git.vet/bitbucket.org/owner/repo` |
+| Gitea | `git.vet/gitea.example.com/owner/repo` |
+| Self-hosted GitLab | `git.vet/gitlab.company.com/owner/repo` |
+
+### Branch and Tag Support
+
+Users should be able to scan specific branches or tags:
+
+| Pattern | Example |
+|---------|---------|
+| Branch | `git.vet/github.com/user/repo@develop` |
+| Tag | `git.vet/github.com/user/repo@v1.2.3` |
+| Commit SHA | `git.vet/github.com/user/repo@abc123def` |
+
+**Implementation Notes:**
+
+Different git hosts use different URL formats for branches/tags:
+
+| Host | Clone URL Format |
+|------|------------------|
+| GitHub | `git clone -b <ref> https://github.com/user/repo` |
+| GitLab | `git clone -b <ref> https://gitlab.com/user/repo` |
+| Bitbucket | `git clone -b <ref> https://bitbucket.org/user/repo` |
+| Gitea | `git clone -b <ref> https://gitea.example.com/user/repo` |
+
+All major git hosts support the `-b` flag for specifying branches/tags, so we can use a unified approach:
+
+```go
+// Parse ref from URL: repo@ref
+ref := "main" // default
+if strings.Contains(repoPath, "@") {
+    parts := strings.SplitN(repoPath, "@", 2)
+    repoPath = parts[0]
+    ref = parts[1]
+}
+
+// Clone with specific ref
+cmd := exec.CommandContext(ctx, "git", "clone",
+    "--depth", "1",
+    "--single-branch",
+    "-b", ref,
+    repoURL,
+    localPath,
+)
+```
+
+**Testing Required:**
+- [ ] GitHub branches and tags
+- [ ] GitLab branches and tags
+- [ ] Bitbucket branches and tags
+- [ ] Gitea branches and tags
+- [ ] Self-hosted GitLab instances
+- [ ] Invalid ref handling (graceful error)
 
 ---
 
