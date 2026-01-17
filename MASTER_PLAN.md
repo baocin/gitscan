@@ -1,0 +1,701 @@
+# GitScan Master Plan
+
+> **Zero-install security scanning for git repositories via protocol-level integration**
+
+## Overview
+
+GitScan is a security scanning tool that works with standard `git clone` commands - no installation required on the client. Users simply prefix their clone URL:
+
+```bash
+git clone https://gitscan.github.com/user/repo
+```
+
+Instead of cloning, they receive a security scan report displayed directly in their terminal.
+
+---
+
+## Core Concept: Git Protocol Sideband Abuse
+
+### The Insight
+
+Git's smart HTTP protocol includes a **sideband channel** for sending progress messages to the client. These appear as `remote: ...` lines during clone operations. By controlling the git server, we can:
+
+1. Accept the clone request
+2. Perform security scanning server-side
+3. Stream scan progress via sideband messages
+4. Display the final report
+5. Intentionally fail the clone (report-only mode) OR complete it (scan + clone mode)
+
+### Why This Works
+
+- **Zero install**: Works with any standard git client
+- **Universal**: macOS, Linux, Windows - anywhere git runs
+- **No new commands**: Familiar `git clone` syntax
+- **Streaming output**: Real-time progress during slow scans
+
+### Limitations
+
+- Server cannot detect client terminal capabilities (colors, width)
+- Scanning happens server-side (privacy trade-off for convenience)
+- Rate limiting required to prevent abuse
+
+---
+
+## User Experience
+
+### Standard Flow (Report Only)
+
+```
+$ git clone https://gitscan.github.com/facebook/react
+Cloning into 'react'...
+remote:
+remote: ⠋ [gitscan] Fetching repository...
+remote: ⠙ [gitscan] Fetched. 142MB, 4,521 files
+remote: ⠹ [gitscan] Scanning with opengrep...
+remote: ⠸ [gitscan] Progress: 1,204 / 4,521 files (26%)
+remote: ⠼ [gitscan] Progress: 3,102 / 4,521 files (68%)
+remote: ✓ [gitscan] Scan complete!
+remote:
+remote: ╔══════════════════════════════════════════════════════════════════╗
+remote: ║  GITSCAN SECURITY REPORT                                         ║
+remote: ║  Repository: facebook/react                                      ║
+remote: ║  Commit: a1b2c3d4e5f6                                            ║
+remote: ║  Scanned: 4,521 files in 3.2s                                    ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
+remote: ║  ✗ 0 Critical   ⚠ 2 High   ◆ 14 Medium   ○ 23 Low               ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
+remote: ║                                                                  ║
+remote: ║  HIGH: Potential ReDoS vulnerability                             ║
+remote: ║  └─ packages/react-dom/src/shared/sanitizeURL.js:42              ║
+remote: ║                                                                  ║
+remote: ║  HIGH: Unsafe innerHTML assignment                               ║
+remote: ║  └─ fixtures/dom/src/components/Editor.js:156                    ║
+remote: ║                                                                  ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
+remote: ║  Full report: https://gitscan.io/r/fb-react-a1b2c3               ║
+remote: ║  To clone: git clone https://github.com/facebook/react           ║
+remote: ╚══════════════════════════════════════════════════════════════════╝
+remote:
+fatal: Could not read from remote repository.
+```
+
+### URL Variants
+
+| URL Pattern | Behavior |
+|-------------|----------|
+| `gitscan.github.com/user/repo` | Scan and report (fail clone) |
+| `gitscan.github.com/clone/user/repo` | Scan, report, then complete clone |
+| `gitscan.github.com/plain/user/repo` | Report without box-drawing/unicode |
+| `gitscan.github.com/json/user/repo` | Output raw JSON report |
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              gitscan server (Go)                                │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  ┌──────────────────┐    ┌──────────────────┐    ┌────────────────────────────┐│
+│  │  Git Smart HTTP  │    │   Repo Fetcher   │    │      Scanner Engine        ││
+│  │     Handler      │───▶│                  │───▶│                            ││
+│  │                  │    │ • Shallow clone  │    │  • Opengrep (LGPL 2.1)     ││
+│  │ • Parse URL      │    │   (--depth=1)    │    │  • Custom rules            ││
+│  │ • Rate limiting  │    │ • Full clone for │    │  • SARIF output            ││
+│  │ • Sideband write │    │   historical     │    │                            ││
+│  │ • Request logging│    │ • Disk cache     │    │                            ││
+│  └──────────────────┘    └──────────────────┘    └────────────────────────────┘│
+│          │                        │                          │                  │
+│          │                        │                          │                  │
+│          ▼                        ▼                          ▼                  │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                            SQLite Database                                │  │
+│  │                                                                           │  │
+│  │  repos          │  scans              │  requests                         │  │
+│  │  ────────────── │  ─────────────────  │  ──────────────────────────────   │  │
+│  │  id             │  id                 │  id                               │  │
+│  │  url            │  repo_id            │  ip                               │  │
+│  │  local_path     │  commit_sha         │  ssh_key_fingerprint              │  │
+│  │  last_commit    │  results_json       │  user_agent                       │  │
+│  │  last_fetched   │  critical_count     │  repo_url                         │  │
+│  │  size_bytes     │  high_count         │  scan_id                          │  │
+│  │  file_count     │  medium_count       │  response_time_ms                 │  │
+│  │                 │  low_count          │  created_at                       │  │
+│  │                 │  scan_duration_ms   │                                   │  │
+│  │                 │  created_at         │                                   │  │
+│  └──────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Component Responsibilities
+
+#### Git Smart HTTP Handler
+- Implements git smart HTTP protocol (just enough to accept connections)
+- Parses incoming URLs to extract `owner/repo`
+- Writes progress and results via sideband channel (band 2)
+- Terminates connection appropriately based on mode
+
+#### Repo Fetcher
+- Clones repositories from GitHub (shallow by default: `--depth=1`)
+- Caches repos on disk to avoid re-fetching
+- Updates cached repos with `git fetch` when stale
+- Tracks specific commits requested by clients
+
+#### Scanner Engine
+- Wraps opengrep binary for static analysis
+- Streams progress back to handler
+- Supports custom rule sets
+- Outputs in SARIF format for consistency
+
+#### SQLite Database
+- Caches scan results per (repo, commit) pair
+- Tracks all requests for rate limiting and analytics
+- Stores repo metadata and cache state
+
+---
+
+## Database Schema
+
+```sql
+-- Cached repositories
+CREATE TABLE repos (
+    id INTEGER PRIMARY KEY,
+    url TEXT UNIQUE NOT NULL,              -- github.com/user/repo
+    local_path TEXT NOT NULL,              -- /var/cache/gitscan/repos/...
+    default_branch TEXT,                   -- main, master, etc.
+    last_commit_sha TEXT,
+    last_fetched_at DATETIME,
+    size_bytes INTEGER,
+    file_count INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Scan results (cached per commit)
+CREATE TABLE scans (
+    id INTEGER PRIMARY KEY,
+    repo_id INTEGER NOT NULL REFERENCES repos(id),
+    commit_sha TEXT NOT NULL,
+    results_json TEXT NOT NULL,            -- Full opengrep SARIF output
+    summary_json TEXT,                     -- Condensed findings
+    critical_count INTEGER DEFAULT 0,
+    high_count INTEGER DEFAULT 0,
+    medium_count INTEGER DEFAULT 0,
+    low_count INTEGER DEFAULT 0,
+    info_count INTEGER DEFAULT 0,
+    files_scanned INTEGER,
+    scan_duration_ms INTEGER,
+    opengrep_version TEXT,
+    rules_version TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(repo_id, commit_sha)
+);
+
+-- Request tracking (rate limiting + analytics)
+CREATE TABLE requests (
+    id INTEGER PRIMARY KEY,
+    ip TEXT NOT NULL,
+    ssh_key_fingerprint TEXT,              -- Available for SSH connections
+    user_agent TEXT,
+    repo_url TEXT NOT NULL,
+    commit_sha TEXT,
+    request_mode TEXT,                     -- 'scan', 'clone', 'json', 'plain'
+    scan_id INTEGER REFERENCES scans(id),  -- NULL if rate limited or error
+    cache_hit BOOLEAN DEFAULT FALSE,
+    response_time_ms INTEGER,
+    error TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for performance
+CREATE INDEX idx_repos_url ON repos(url);
+CREATE INDEX idx_scans_repo_commit ON scans(repo_id, commit_sha);
+CREATE INDEX idx_requests_ip_time ON requests(ip, created_at);
+CREATE INDEX idx_requests_ssh_time ON requests(ssh_key_fingerprint, created_at)
+    WHERE ssh_key_fingerprint IS NOT NULL;
+CREATE INDEX idx_requests_repo_time ON requests(repo_url, created_at);
+```
+
+---
+
+## Rate Limiting Strategy
+
+### Identification Methods
+
+| Connection Type | Identifier | Reliability |
+|-----------------|------------|-------------|
+| HTTPS (public repos) | IP address | Low (NAT, VPNs) |
+| HTTPS (private repos) | Username/token | High |
+| SSH | Public key fingerprint | High |
+
+### Default Limits
+
+| Scope | Limit | Window |
+|-------|-------|--------|
+| Per IP | 30 requests | 1 minute |
+| Per IP | 200 requests | 1 hour |
+| Per SSH key | 60 requests | 1 minute |
+| Per (IP, repo) | 10 requests | 1 minute |
+
+### Implementation
+
+```sql
+-- Check if IP is rate limited (per-minute)
+SELECT COUNT(*) as cnt FROM requests
+WHERE ip = ? AND created_at > datetime('now', '-1 minute');
+
+-- Check if specific repo is being hammered by IP
+SELECT COUNT(*) as cnt FROM requests
+WHERE ip = ? AND repo_url = ? AND created_at > datetime('now', '-1 minute');
+```
+
+When rate limited, return a friendly sideband message:
+
+```
+remote:
+remote: ⚠ [gitscan] Rate limit exceeded
+remote:
+remote: You've made too many requests. Please wait a moment.
+remote: If you need higher limits, visit: https://gitscan.io/pricing
+remote:
+fatal: Could not read from remote repository.
+```
+
+---
+
+## Scanner: Opengrep
+
+### Why Opengrep
+
+- **License**: LGPL 2.1 (engine AND rules) - safe for commercial SaaS use
+- **Compatibility**: Drop-in replacement for semgrep
+- **Community**: Backed by Aikido, Amplify, Orca, and others
+- **Performance**: Fast enough for real-time scanning
+
+References:
+- https://www.opengrep.dev/
+- https://github.com/opengrep/opengrep
+
+### Integration Approach
+
+```go
+// scanner/opengrep.go
+
+type Scanner struct {
+    binaryPath   string
+    rulesPath    string
+    timeout      time.Duration
+    progressChan chan Progress
+}
+
+type Progress struct {
+    FilesScanned int
+    FilesTotal   int
+    Percent      int
+}
+
+type Results struct {
+    Findings     []Finding
+    CriticalCount int
+    HighCount     int
+    MediumCount   int
+    LowCount      int
+    Duration      time.Duration
+}
+
+func (s *Scanner) Scan(ctx context.Context, repoPath string) (*Results, error) {
+    cmd := exec.CommandContext(ctx, s.binaryPath,
+        "--config", s.rulesPath,
+        "--json",
+        "--metrics", "off",
+        repoPath,
+    )
+    // ... parse output, stream progress
+}
+```
+
+### Rule Categories
+
+| Category | Description |
+|----------|-------------|
+| security | Vulnerabilities, injection, auth issues |
+| secrets | API keys, passwords, tokens |
+| crypto | Weak algorithms, hardcoded keys |
+| injection | SQL, command, XSS, template injection |
+
+---
+
+## Streaming Progress
+
+The git sideband protocol allows real-time streaming of messages. This is critical for large repos where scanning may take 10+ seconds.
+
+### Sideband Protocol
+
+```
+Packet format: 4-byte hex length + 1-byte channel + payload
+
+Channels:
+  1 = pack data (actual git objects)
+  2 = progress (displayed as "remote: ...")
+  3 = error (displayed as "remote: ..." to stderr)
+```
+
+### Go Implementation
+
+```go
+// githttp/sideband.go
+
+type SidebandWriter struct {
+    w io.Writer
+}
+
+func (s *SidebandWriter) WriteProgress(msg string) error {
+    return s.writeBand(2, msg+"\n")
+}
+
+func (s *SidebandWriter) WriteError(msg string) error {
+    return s.writeBand(3, msg+"\n")
+}
+
+func (s *SidebandWriter) writeBand(band byte, data string) error {
+    // pkt-line format: 4 hex digits length + band byte + data
+    length := len(data) + 5 // 4 bytes length + 1 byte band
+    pkt := fmt.Sprintf("%04x%c%s", length, band, data)
+    _, err := s.w.Write([]byte(pkt))
+    return err
+}
+
+// Flush packet (0000) signals end of stream
+func (s *SidebandWriter) Flush() error {
+    _, err := s.w.Write([]byte("0000"))
+    return err
+}
+```
+
+### Progress Animation
+
+Since we can't detect terminal capabilities, we use universally-supported characters:
+
+```go
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+func (h *Handler) showProgress(sb *SidebandWriter, scanner *Scanner) {
+    ticker := time.NewTicker(100 * time.Millisecond)
+    frame := 0
+
+    for {
+        select {
+        case progress := <-scanner.Progress():
+            sb.WriteProgress(fmt.Sprintf("%s [gitscan] Scanning: %d/%d files (%d%%)",
+                spinnerFrames[frame%len(spinnerFrames)],
+                progress.Done, progress.Total, progress.Percent))
+            frame++
+        case <-ticker.C:
+            // Keep spinner alive even without progress updates
+            frame++
+        case <-scanner.Done():
+            return
+        }
+    }
+}
+```
+
+---
+
+## Terminal Output Formatting
+
+### Character Sets
+
+**Unicode mode (default):**
+```
+╔══════════════════════════════════════════════════════════════╗
+║  GITSCAN SECURITY REPORT                                     ║
+╠══════════════════════════════════════════════════════════════╣
+║  ✗ 2 Critical   ⚠ 5 High   ◆ 12 Medium   ○ 23 Low           ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+**Plain mode (`/plain/` URL):**
+```
+================================================================
+  GITSCAN SECURITY REPORT
+================================================================
+  [X] 2 Critical   [!] 5 High   [*] 12 Medium   [-] 23 Low
+================================================================
+```
+
+### Colors
+
+ANSI colors are sent regardless of terminal (most support them):
+
+```go
+const (
+    Reset   = "\033[0m"
+    Red     = "\033[31m"
+    Yellow  = "\033[33m"
+    Green   = "\033[32m"
+    Blue    = "\033[34m"
+    Bold    = "\033[1m"
+)
+
+// Example usage
+fmt.Sprintf("%s%s✗ 2 Critical%s", Bold, Red, Reset)
+```
+
+For `/plain/` mode, colors are stripped.
+
+---
+
+## Git Version Compatibility Testing
+
+### Test Matrix
+
+| Git Version | Source | Priority |
+|-------------|--------|----------|
+| 2.17.x | Ubuntu 18.04 LTS | High |
+| 2.25.x | Ubuntu 20.04 LTS | High |
+| 2.34.x | Ubuntu 22.04 LTS | High |
+| 2.39.x | macOS Xcode CLT | High |
+| 2.43.x | Ubuntu 24.04 LTS | High |
+| 2.45.x | Homebrew recent | Medium |
+| 2.52.x | Latest release | Medium |
+
+### Docker Test Containers
+
+```dockerfile
+# docker/git-versions/git-2.17.Dockerfile
+FROM ubuntu:18.04
+RUN apt-get update && apt-get install -y git
+CMD ["git", "--version"]
+
+# docker/git-versions/git-2.43.Dockerfile
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y git
+CMD ["git", "--version"]
+```
+
+### Test Script
+
+```bash
+#!/bin/bash
+# test/git-compat.sh
+
+VERSIONS=("2.17" "2.25" "2.34" "2.39" "2.43" "2.52")
+
+for v in "${VERSIONS[@]}"; do
+    echo "Testing git $v..."
+    docker run --rm gitscan-test-git-$v \
+        git clone https://localhost:8443/test/repo 2>&1 | \
+        grep -q "GITSCAN SECURITY REPORT" && echo "✓ Pass" || echo "✗ Fail"
+done
+```
+
+---
+
+## Project Structure
+
+```
+gitscan/
+├── cmd/
+│   └── gitscan-server/
+│       └── main.go                 # Entry point
+├── internal/
+│   ├── githttp/
+│   │   ├── handler.go              # HTTP handler for git requests
+│   │   ├── sideband.go             # Sideband message writer
+│   │   ├── protocol.go             # Git protocol parsing
+│   │   └── report.go               # Report formatting
+│   ├── scanner/
+│   │   ├── opengrep.go             # Opengrep wrapper
+│   │   ├── progress.go             # Progress tracking
+│   │   └── rules/                  # Custom rule definitions
+│   │       └── default.yaml
+│   ├── cache/
+│   │   ├── repo.go                 # Repository fetching/caching
+│   │   └── manager.go              # Cache eviction, cleanup
+│   ├── db/
+│   │   ├── db.go                   # SQLite connection
+│   │   ├── schema.sql              # Schema definitions
+│   │   ├── repos.go                # Repo queries
+│   │   ├── scans.go                # Scan queries
+│   │   └── requests.go             # Request logging/rate limit queries
+│   └── ratelimit/
+│       └── limiter.go              # Rate limiting logic
+├── docker/
+│   ├── Dockerfile                  # Production image
+│   ├── Dockerfile.dev              # Development image
+│   └── git-versions/               # Test containers
+│       ├── git-2.17.Dockerfile
+│       ├── git-2.25.Dockerfile
+│       ├── git-2.34.Dockerfile
+│       ├── git-2.39.Dockerfile
+│       ├── git-2.43.Dockerfile
+│       └── git-2.52.Dockerfile
+├── test/
+│   ├── git-compat.sh               # Git version compatibility tests
+│   ├── integration_test.go         # Integration tests
+│   └── fixtures/                   # Test repositories
+├── scripts/
+│   ├── build.sh                    # Build script
+│   └── deploy.sh                   # Hetzner deployment
+├── docker-compose.yml              # Local development
+├── go.mod
+├── go.sum
+├── MASTER_PLAN.md                  # This document
+└── README.md
+```
+
+---
+
+## Deployment: Hetzner
+
+### Server Requirements
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| CPU | 2 vCPU | 4 vCPU |
+| RAM | 4 GB | 8 GB |
+| Disk | 100 GB SSD | 250 GB SSD |
+| Network | 1 Gbps | 1 Gbps |
+
+### Recommended Hetzner Products
+
+- **CPX31** (4 vCPU, 8 GB RAM, 160 GB) - ~€15/month
+- **Storage Box** for repo cache overflow - optional
+
+### Deployment Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Hetzner Cloud                           │
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │                    CPX31 VM                            │ │
+│  │  ┌─────────────────────────────────────────────────┐  │ │
+│  │  │              Docker Compose                      │  │ │
+│  │  │  ┌─────────────────┐  ┌─────────────────────┐   │  │ │
+│  │  │  │  gitscan-server │  │     opengrep        │   │  │ │
+│  │  │  │    (Go app)     │──│    (scanner)        │   │  │ │
+│  │  │  └─────────────────┘  └─────────────────────┘   │  │ │
+│  │  │           │                                      │  │ │
+│  │  │           ▼                                      │  │ │
+│  │  │  ┌─────────────────────────────────────────┐    │  │ │
+│  │  │  │            Volumes                       │    │  │ │
+│  │  │  │  /data/sqlite   - Database               │    │  │ │
+│  │  │  │  /data/repos    - Cached repositories    │    │  │ │
+│  │  │  └─────────────────────────────────────────┘    │  │ │
+│  │  └─────────────────────────────────────────────────┘  │ │
+│  └───────────────────────────────────────────────────────┘ │
+│                            │                                │
+│                    Hetzner Firewall                        │
+│                    - Allow 443 (HTTPS)                     │
+│                    - Allow 22 (SSH from admin IP)          │
+└─────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │   Cloudflare    │
+                    │   (DNS + CDN)   │
+                    │                 │
+                    │ gitscan.github.com → Hetzner IP
+                    └─────────────────┘
+```
+
+### docker-compose.yml
+
+```yaml
+version: '3.8'
+
+services:
+  gitscan:
+    build: .
+    ports:
+      - "443:8443"
+      - "80:8080"   # Redirect to HTTPS
+    volumes:
+      - ./data/sqlite:/data/sqlite
+      - ./data/repos:/data/repos
+      - ./certs:/certs:ro
+    environment:
+      - GITSCAN_DB_PATH=/data/sqlite/gitscan.db
+      - GITSCAN_REPO_CACHE_PATH=/data/repos
+      - GITSCAN_TLS_CERT=/certs/cert.pem
+      - GITSCAN_TLS_KEY=/certs/key.pem
+    restart: unless-stopped
+
+  opengrep:
+    image: ghcr.io/opengrep/opengrep:latest
+    volumes:
+      - ./data/repos:/repos:ro
+      - ./rules:/rules:ro
+```
+
+---
+
+## Security Considerations
+
+### Input Validation
+
+- Sanitize repository URLs (prevent path traversal, injection)
+- Validate URL format: `^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$`
+- Reject URLs with suspicious patterns
+
+### Resource Limits
+
+- Maximum repo size: 500 MB (configurable)
+- Maximum files to scan: 100,000
+- Scan timeout: 60 seconds
+- Clone timeout: 120 seconds
+
+### Isolation
+
+- Each scan runs in isolated temp directory
+- Consider gVisor/Firecracker for repo cloning (defense in depth)
+- Opengrep runs with limited permissions
+
+### Network
+
+- TLS required for all connections
+- No outbound network from scanner container
+- Firewall: only 443 exposed
+
+---
+
+## Future Enhancements
+
+### Phase 2
+- [ ] Private repository support (GitHub App OAuth)
+- [ ] GitLab and Bitbucket support
+- [ ] Custom rule upload via web UI
+- [ ] Webhook notifications
+
+### Phase 3
+- [ ] PR comment integration (gitscan as GitHub Action)
+- [ ] Historical trend tracking
+- [ ] Organization dashboards
+- [ ] API for CI/CD integration
+
+### Phase 4
+- [ ] Self-hosted option (Docker image)
+- [ ] IDE extensions (VS Code, JetBrains)
+- [ ] Dependency scanning (SCA)
+- [ ] License compliance checking
+
+---
+
+## Open Questions
+
+1. **Domain**: Is `gitscan.github.com` achievable? May need `gitscan.io` or similar
+2. **Pricing**: Free tier limits? Paid tiers for higher rate limits?
+3. **Private repos**: OAuth flow complexity - worth it for v1?
+4. **Clone mode**: Should we support actually completing the clone after scan?
+
+---
+
+## References
+
+- [Git Protocol Documentation](https://git-scm.com/docs/protocol-v2)
+- [Git Smart HTTP Protocol](https://www.git-scm.com/docs/http-protocol)
+- [Opengrep](https://www.opengrep.dev/)
+- [Semgrep Licensing Changes](https://semgrep.dev/blog/2024/important-updates-to-semgrep-oss/)
+- [Opengrep Fork Announcement](https://www.infoq.com/news/2025/02/semgrep-forked-opengrep/)
