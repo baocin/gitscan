@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,8 +20,16 @@ jobs:
       - name: Build
         run: go build -v ./...
 
-      - name: Run unit tests
-        run: go test -v ./...
+      - name: Run unit tests with coverage
+        run: |
+          go test -v -race -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
 
   integration-test:
     runs-on: ubuntu-latest
@@ -70,8 +78,17 @@ jobs:
 
   docker-test:
     runs-on: ubuntu-latest
+    needs: test  # Run after unit tests pass
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Run unit tests before Docker build
+        run: go test -v ./...
 
       - name: Build Docker image
         run: docker build -f docker/Dockerfile -t gitscan:test .
