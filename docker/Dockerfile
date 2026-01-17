@@ -56,8 +56,12 @@ RUN apk add --no-cache \
     musl-dev \
     libffi-dev
 
-# Install opengrep via pip
-RUN pip install --no-cache-dir opengrep || pip install --no-cache-dir semgrep
+# Install opengrep via pip and verify
+RUN pip install --no-cache-dir opengrep || pip install --no-cache-dir semgrep && \
+    echo "=== Checking installed scanner ===" && \
+    (which opengrep && opengrep --version) || \
+    (which semgrep && semgrep --version) || \
+    echo "WARNING: No scanner found in PATH"
 
 # Create non-root user
 RUN addgroup -S gitscan && adduser -S gitscan -G gitscan

@@ -13,6 +13,19 @@ apt-get install -y git golang-go python3 python3-pip
 # Install opengrep (semgrep-compatible scanner)
 pip3 install opengrep || pip3 install semgrep
 
+# Verify scanner is installed and determine which one
+SCANNER_PATH=""
+if command -v opengrep &> /dev/null; then
+    SCANNER_PATH="opengrep"
+    echo "Found opengrep: $(which opengrep)"
+elif command -v semgrep &> /dev/null; then
+    SCANNER_PATH="semgrep"
+    echo "Found semgrep: $(which semgrep)"
+else
+    echo "ERROR: Neither opengrep nor semgrep installed!"
+    exit 1
+fi
+
 # Create app user
 useradd -r -s /bin/false gitvet || true
 
@@ -45,7 +58,7 @@ ExecStart=/opt/gitvet/git-vet-server \
     -listen :6633 \
     -db /var/lib/gitvet/data/gitvet.db \
     -cache-dir /var/lib/gitvet/cache \
-    -opengrep opengrep
+    -opengrep $SCANNER_PATH
 Restart=always
 RestartSec=5
 
