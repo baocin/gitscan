@@ -9,9 +9,27 @@ import (
 
 	"github.com/baocin/gitscan/internal/cache"
 	"github.com/baocin/gitscan/internal/db"
+	"github.com/baocin/gitscan/internal/preflight"
+	"github.com/baocin/gitscan/internal/queue"
 	"github.com/baocin/gitscan/internal/ratelimit"
 	"github.com/baocin/gitscan/internal/scanner"
 )
+
+// Config holds handler configuration
+type Config struct {
+	PrivateRepoDelaySeconds int    // Countdown delay for private repos (default: 10)
+	StripeLink              string // Link to paid tier
+	MaxRepoSizeKB           int64  // Max repo size in KB
+}
+
+// DefaultConfig returns default handler configuration
+func DefaultConfig() Config {
+	return Config{
+		PrivateRepoDelaySeconds: 10,
+		StripeLink:              "https://gitscan.io/pricing",
+		MaxRepoSizeKB:           512000, // 500MB
+	}
+}
 
 // Handler handles git HTTP protocol requests
 type Handler struct {
@@ -19,16 +37,22 @@ type Handler struct {
 	cache     *cache.RepoCache
 	scanner   *scanner.Scanner
 	limiter   *ratelimit.Limiter
+	preflight *preflight.Checker
+	queue     *queue.Manager
+	config    Config
 	useColors bool
 }
 
 // NewHandler creates a new git HTTP handler
-func NewHandler(database *db.DB, repoCache *cache.RepoCache, scan *scanner.Scanner, limiter *ratelimit.Limiter) *Handler {
+func NewHandler(database *db.DB, repoCache *cache.RepoCache, scan *scanner.Scanner, limiter *ratelimit.Limiter, pf *preflight.Checker, q *queue.Manager, config Config) *Handler {
 	return &Handler{
 		db:        database,
 		cache:     repoCache,
 		scanner:   scan,
 		limiter:   limiter,
+		preflight: pf,
+		queue:     q,
+		config:    config,
 		useColors: true, // Default to colors
 	}
 }
@@ -48,6 +72,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Detect if this is a private repo request (has auth header)
+	isPrivate := hasAuthHeader(r)
+
 	// Check rate limit
 	if allowed, msg := h.limiter.Allow(clientIP, repoPath); !allowed {
 		h.writeRateLimitResponse(w, msg)
@@ -63,16 +90,29 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Handle different endpoints
 	switch {
 	case strings.Contains(r.URL.Path, "/info/refs"):
-		h.handleInfoRefs(ctx, w, r, mode, repoPath, clientIP, startTime)
+		h.handleInfoRefs(ctx, w, r, mode, repoPath, clientIP, startTime, isPrivate)
 	case strings.Contains(r.URL.Path, "/git-upload-pack"):
-		h.handleUploadPack(ctx, w, r, mode, repoPath, clientIP, startTime)
+		h.handleUploadPack(ctx, w, r, mode, repoPath, clientIP, startTime, isPrivate)
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
 	}
 }
 
+// hasAuthHeader checks if the request includes authentication
+func hasAuthHeader(r *http.Request) bool {
+	// Check Basic Auth header
+	if r.Header.Get("Authorization") != "" {
+		return true
+	}
+	// Check for credentials in URL (git sometimes does this)
+	if r.URL.User != nil {
+		return true
+	}
+	return false
+}
+
 // handleInfoRefs handles the initial discovery request
-func (h *Handler) handleInfoRefs(ctx context.Context, w http.ResponseWriter, r *http.Request, mode, repoPath, clientIP string, startTime time.Time) {
+func (h *Handler) handleInfoRefs(ctx context.Context, w http.ResponseWriter, r *http.Request, mode, repoPath, clientIP string, startTime time.Time, isPrivate bool) {
 	service := r.URL.Query().Get("service")
 	if service != "git-upload-pack" {
 		http.Error(w, "Only git-upload-pack is supported", http.StatusForbidden)
@@ -102,7 +142,7 @@ func (h *Handler) handleInfoRefs(ctx context.Context, w http.ResponseWriter, r *
 }
 
 // handleUploadPack handles the pack negotiation and is where we inject our scan results
-func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r *http.Request, mode, repoPath, clientIP string, startTime time.Time) {
+func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r *http.Request, mode, repoPath, clientIP string, startTime time.Time, isPrivate bool) {
 	// Set headers
 	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -118,28 +158,148 @@ func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r
 	useColors := mode != "plain"
 	sb := NewSidebandWriter(w, useColors)
 
+	// For private repos, show warning countdown
+	if isPrivate {
+		cancelled := h.showPrivateRepoWarning(ctx, sb)
+		if cancelled {
+			sb.WriteEmptyLine()
+			sb.WriteProgress("Scan cancelled by user.")
+			sb.WriteEmptyLine()
+			sb.Flush()
+			return
+		}
+	}
+
 	// Start the scan process
-	h.performScan(ctx, sb, mode, repoPath, clientIP, startTime)
+	h.performScan(ctx, sb, mode, repoPath, clientIP, startTime, isPrivate)
 
 	// End the connection (intentionally fail the clone for scan-only mode)
 	sb.Flush()
 }
 
+// showPrivateRepoWarning displays a countdown warning for private repo scans
+// Returns true if the user cancelled (Ctrl+C)
+func (h *Handler) showPrivateRepoWarning(ctx context.Context, sb *SidebandWriter) bool {
+	report := NewReportWriter(sb)
+	boxWidth := 66
+
+	sb.WriteEmptyLine()
+	report.WriteBoxTop(boxWidth)
+	report.WriteBoxLine(sb.Color(Yellow, "⚠  PRIVATE REPOSITORY DETECTED"), boxWidth)
+	report.WriteBoxMiddle(boxWidth)
+	report.WriteBoxLine("Your private repository code will be analyzed on our servers.", boxWidth)
+	report.WriteBoxLine("Code is deleted immediately after scanning.", boxWidth)
+	report.WriteBoxLine("", boxWidth)
+	report.WriteBoxLine(sb.Color(Cyan, "Press Ctrl+C now to cancel if you do not consent."), boxWidth)
+	report.WriteBoxMiddle(boxWidth)
+	report.WriteBoxLine(fmt.Sprintf("Skip this delay: %s", h.config.StripeLink), boxWidth)
+	report.WriteBoxBottom(boxWidth)
+	sb.WriteEmptyLine()
+
+	// Countdown
+	for i := h.config.PrivateRepoDelaySeconds; i > 0; i-- {
+		// Check if client disconnected (Ctrl+C)
+		select {
+		case <-ctx.Done():
+			return true // User cancelled
+		default:
+			// Continue countdown
+		}
+
+		sb.WriteProgressf("Starting scan in %d seconds... (Ctrl+C to cancel)", i)
+
+		// Wait 1 second, but check for cancellation every 100ms
+		for j := 0; j < 10; j++ {
+			select {
+			case <-ctx.Done():
+				return true // User cancelled during wait
+			case <-time.After(100 * time.Millisecond):
+				// Continue waiting
+			}
+		}
+	}
+
+	sb.WriteProgress(sb.Color(Green, "✓ Proceeding with scan..."))
+	sb.WriteEmptyLine()
+	return false
+}
+
+// checkClientDisconnected checks if the client has disconnected
+func checkClientDisconnected(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
 // performScan fetches the repo, scans it, and writes results via sideband
-func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, mode, repoPath, clientIP string, startTime time.Time) {
+func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, mode, repoPath, clientIP string, startTime time.Time, isPrivate bool) {
 	report := NewReportWriter(sb)
 	boxWidth := 66
 
 	sb.WriteEmptyLine()
 
-	// Step 1: Fetch repository
+	// Step 0: Preflight checks
+	if h.preflight != nil {
+		sb.WriteProgress("[gitscan] Running preflight checks...")
+
+		// Check disk space
+		available, ok, err := h.preflight.CheckDiskSpace(h.cache.GetCacheDir())
+		if err == nil && !ok {
+			sb.WriteEmptyLine()
+			report.WriteBoxTop(boxWidth)
+			report.WriteBoxLine(sb.Color(Red, "ERROR: Server disk space low"), boxWidth)
+			report.WriteBoxLine(fmt.Sprintf("Available: %s", preflight.FormatSize(available)), boxWidth)
+			report.WriteBoxLine("Please try again later.", boxWidth)
+			report.WriteBoxBottom(boxWidth)
+			sb.WriteEmptyLine()
+			return
+		}
+
+		// Check repo size via GitHub API
+		repoInfo, _ := h.preflight.CheckRepo(ctx, repoPath)
+		if repoInfo != nil && repoInfo.SizeKB > 0 {
+			ok, reason := h.preflight.CheckRepoSize(repoInfo)
+			if !ok {
+				sb.WriteEmptyLine()
+				report.WriteBoxTop(boxWidth)
+				report.WriteBoxLine(sb.Color(Red, "ERROR: Repository too large"), boxWidth)
+				report.WriteBoxLine(reason, boxWidth)
+				report.WriteBoxLine("Consider using a smaller repository or paid tier.", boxWidth)
+				report.WriteBoxBottom(boxWidth)
+				sb.WriteEmptyLine()
+				return
+			}
+			sb.WriteProgressf("[gitscan] Repo size: ~%s", preflight.FormatSize(repoInfo.SizeBytes))
+		}
+	}
+
+	// Check for client disconnect before starting heavy work
+	if checkClientDisconnected(ctx) {
+		return // Client cancelled, abort silently
+	}
+
+	// Step 1: Fetch repository (shallow clone)
 	frame := 0
-	sb.WriteProgressf("%s [gitscan] Fetching repository...", SpinnerFrames[frame%len(SpinnerFrames)])
+	sb.WriteProgressf("%s [gitscan] Fetching repository (shallow clone)...", SpinnerFrames[frame%len(SpinnerFrames)])
 
 	repo, err := h.cache.FetchRepo(ctx, repoPath, func(progress string) {
+		// Check for disconnect during fetch
+		if checkClientDisconnected(ctx) {
+			return
+		}
 		frame++
 		sb.WriteProgressf("%s [gitscan] %s", SpinnerFrames[frame%len(SpinnerFrames)], progress)
 	})
+
+	// Check if cancelled during fetch
+	if checkClientDisconnected(ctx) {
+		// Clean up partial clone if needed
+		return
+	}
+
 	if err != nil {
 		sb.WriteEmptyLine()
 		report.WriteBoxTop(boxWidth)
@@ -160,15 +320,30 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, mode, rep
 		return
 	}
 
+	// Check for client disconnect before scanning
+	if checkClientDisconnected(ctx) {
+		return
+	}
+
 	// Step 3: Run scan
 	sb.WriteProgressf("%s [gitscan] Scanning with opengrep...", SpinnerFrames[frame%len(SpinnerFrames)])
 
 	scanResult, err := h.scanner.Scan(ctx, repo.LocalPath, func(progress scanner.Progress) {
+		// Check for disconnect during scan
+		if checkClientDisconnected(ctx) {
+			return
+		}
 		frame++
 		sb.WriteProgressf("%s [gitscan] Scanning: %d/%d files (%d%%)",
 			SpinnerFrames[frame%len(SpinnerFrames)],
 			progress.FilesScanned, progress.FilesTotal, progress.Percent)
 	})
+
+	// Check if cancelled during scan
+	if checkClientDisconnected(ctx) {
+		return
+	}
+
 	if err != nil {
 		sb.WriteEmptyLine()
 		report.WriteBoxTop(boxWidth)

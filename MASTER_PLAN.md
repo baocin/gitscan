@@ -90,6 +90,98 @@ fatal: Could not read from remote repository.
 
 ---
 
+## Advanced Features
+
+### Client Disconnect Detection (Ctrl+C)
+
+When a user presses Ctrl+C during a scan, the HTTP connection closes. We detect this via Go's `context.Done()` and immediately abort processing to save compute:
+
+```go
+select {
+case <-ctx.Done():
+    return // Client disconnected, abort
+default:
+    // Continue processing
+}
+```
+
+This check is performed:
+- Before starting preflight checks
+- During repository fetch
+- During scan execution
+- Between each major step
+
+### Private Repository Warning
+
+When a private repo is detected (user provides authentication), we show a 10-second countdown warning:
+
+```
+$ git clone https://gitscan.github.com/user/private-repo
+Cloning into 'private-repo'...
+remote:
+remote: ╔══════════════════════════════════════════════════════════════════╗
+remote: ║  ⚠  PRIVATE REPOSITORY DETECTED                                  ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
+remote: ║  Your private repository code will be analyzed on our servers.   ║
+remote: ║  Code is deleted immediately after scanning.                     ║
+remote: ║                                                                  ║
+remote: ║  Press Ctrl+C now to cancel if you do not consent.               ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
+remote: ║  Skip this delay: https://gitscan.io/pricing                     ║
+remote: ╚══════════════════════════════════════════════════════════════════╝
+remote:
+remote: Starting scan in 10 seconds... (Ctrl+C to cancel)
+remote: Starting scan in 9 seconds... (Ctrl+C to cancel)
+...
+```
+
+- Paid users skip this delay
+- Detects auth via `Authorization` header or URL credentials
+
+### Preflight Checks
+
+Before cloning, we perform fast checks:
+
+1. **Disk Space**: Verify server has sufficient free space
+2. **Repo Size**: Query GitHub API for repo size (avoid cloning huge repos)
+3. **Rate Limits**: Check request quotas
+
+```go
+// GitHub API returns repo size in KB
+GET https://api.github.com/repos/{owner}/{repo}
+{
+  "size": 245678,  // KB
+  "private": true,
+  ...
+}
+```
+
+Note: GitHub API size is approximate (doesn't include LFS, may be stale).
+
+### Queue Management
+
+Separate processing queues for public vs private repos:
+
+| Queue | Concurrent Slots | Priority |
+|-------|------------------|----------|
+| Public (free) | 10 | Low |
+| Private (free) | 3 | Normal |
+| Paid tier | Dedicated | High |
+
+This prevents free private repo scans from blocking public scans.
+
+### Shallow Clone Optimization
+
+Server always uses shallow clone to minimize disk and bandwidth:
+
+```bash
+git clone --depth 1 --single-branch --no-tags <repo>
+```
+
+This typically reduces clone time by 80-95% for repos with long history.
+
+---
+
 ## Architecture
 
 ```

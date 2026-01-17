@@ -14,6 +14,8 @@ import (
 	"github.com/baocin/gitscan/internal/cache"
 	"github.com/baocin/gitscan/internal/db"
 	"github.com/baocin/gitscan/internal/githttp"
+	"github.com/baocin/gitscan/internal/preflight"
+	"github.com/baocin/gitscan/internal/queue"
 	"github.com/baocin/gitscan/internal/ratelimit"
 	"github.com/baocin/gitscan/internal/scanner"
 )
@@ -76,8 +78,19 @@ func main() {
 	limiter := ratelimit.New(database, limiterCfg)
 	log.Printf("Rate limiter: %d req/min, %d req/hour per IP", limiterCfg.IPPerMinute, limiterCfg.IPPerHour)
 
+	// Initialize preflight checker
+	preflightCfg := preflight.DefaultConfig()
+	preflightChecker := preflight.NewChecker(preflightCfg)
+	log.Printf("Preflight: max repo size %dMB", preflightCfg.MaxRepoSizeKB/1024)
+
+	// Initialize queue manager
+	queueCfg := queue.DefaultConfig()
+	queueManager := queue.NewManager(queueCfg)
+	log.Printf("Queue: %d public slots, %d private slots", queueCfg.MaxConcurrentPublic, queueCfg.MaxConcurrentPrivate)
+
 	// Create git HTTP handler
-	gitHandler := githttp.NewHandler(database, repoCache, scan, limiter)
+	handlerCfg := githttp.DefaultConfig()
+	gitHandler := githttp.NewHandler(database, repoCache, scan, limiter, preflightChecker, queueManager, handlerCfg)
 
 	// Set up HTTP server with routes
 	mux := http.NewServeMux()

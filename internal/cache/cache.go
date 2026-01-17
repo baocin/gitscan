@@ -268,6 +268,11 @@ func (c *RepoCache) getRepoStats(repoPath string) (sizeBytes int64, fileCount in
 	return
 }
 
+// GetCacheDir returns the cache directory path
+func (c *RepoCache) GetCacheDir() string {
+	return c.cacheDir
+}
+
 // Cleanup removes old cached repositories
 func (c *RepoCache) Cleanup(maxAge time.Duration) error {
 	c.mu.Lock()
