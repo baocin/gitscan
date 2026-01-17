@@ -163,10 +163,10 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 		totalFiles = 0 // Continue even if we can't count
 	}
 
-	// Build opengrep command
+	// Build opengrep command - requires "scan" subcommand
 	args := []string{
+		"scan",
 		"--json",
-		"--metrics=off",
 	}
 
 	if s.rulesPath != "" {
