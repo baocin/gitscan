@@ -80,10 +80,14 @@ jobs:
         run: |
           docker run -d --name gitscan-test -p 6633:6633 gitscan:test
           sleep 5
+          echo "=== Container logs ==="
+          docker logs gitscan-test
+          echo "=== Container status ==="
+          docker ps -a
 
       - name: Test health in Docker
         run: |
-          curl -sf http://localhost:6633/health
+          curl -sf http://localhost:6633/health || (docker logs gitscan-test && exit 1)
 
       - name: Test version in Docker
         run: |
