@@ -447,48 +447,241 @@ For `/plain/` mode, colors are stripped.
 
 ---
 
-## Git Version Compatibility Testing
+## Build & Test Strategy
 
-### Test Matrix
+### Multi-Stage Docker Build
 
-| Git Version | Source | Priority |
-|-------------|--------|----------|
-| 2.17.x | Ubuntu 18.04 LTS | High |
-| 2.25.x | Ubuntu 20.04 LTS | High |
-| 2.34.x | Ubuntu 22.04 LTS | High |
-| 2.39.x | macOS Xcode CLT | High |
-| 2.43.x | Ubuntu 24.04 LTS | High |
-| 2.45.x | Homebrew recent | Medium |
-| 2.52.x | Latest release | Medium |
+The build process uses a two-phase approach:
 
-### Docker Test Containers
+1. **Builder Container**: Compiles Go binary, caches opengrep rules, runs unit tests
+2. **Git Version Test Containers**: Use the built binary to verify compatibility across git versions
 
-```dockerfile
-# docker/git-versions/git-2.17.Dockerfile
-FROM ubuntu:18.04
-RUN apt-get update && apt-get install -y git
-CMD ["git", "--version"]
-
-# docker/git-versions/git-2.43.Dockerfile
-FROM ubuntu:24.04
-RUN apt-get update && apt-get install -y git
-CMD ["git", "--version"]
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 1: Builder (runs on every build)                                     │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  FROM golang:1.22 AS builder                                          │  │
+│  │  • Download dependencies (cached layer)                               │  │
+│  │  • Build Go binary                                                    │  │
+│  │  • Run unit tests (go test ./...)                                     │  │
+│  │  • Output: /gitscan binary                                            │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  FROM opengrep AS rules-cache                                         │  │
+│  │  • Pull opengrep image (cached layer)                                 │  │
+│  │  • Extract rules to /rules (cached layer)                             │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼ artifacts: binary + rules
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 2: Git Version Test Matrix (runs in parallel)                        │
+│                                                                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
+│  │ git 2.17    │  │ git 2.25    │  │ git 2.34    │  │ git 2.43    │  ...   │
+│  │ (ubuntu     │  │ (ubuntu     │  │ (ubuntu     │  │ (ubuntu     │        │
+│  │  18.04)     │  │  20.04)     │  │  22.04)     │  │  24.04)     │        │
+│  ├─────────────┤  ├─────────────┤  ├─────────────┤  ├─────────────┤        │
+│  │ COPY binary │  │ COPY binary │  │ COPY binary │  │ COPY binary │        │
+│  │ COPY rules  │  │ COPY rules  │  │ COPY rules  │  │ COPY rules  │        │
+│  │ RUN tests   │  │ RUN tests   │  │ RUN tests   │  │ RUN tests   │        │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘        │
+│                                                                             │
+│  Tests verify:                                                              │
+│  • Server starts successfully                                               │
+│  • git clone receives sideband messages                                     │
+│  • Report formatting displays correctly                                     │
+│  • Connection terminates as expected                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼ all tests pass
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 3: Production Image                                                  │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  FROM alpine:latest                                                   │  │
+│  │  COPY --from=builder /gitscan /usr/local/bin/                         │  │
+│  │  COPY --from=rules-cache /rules /etc/gitscan/rules/                   │  │
+│  │  COPY --from=opengrep /usr/local/bin/opengrep /usr/local/bin/         │  │
+│  │  → Minimal production image (~50MB)                                   │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Test Script
+### Git Version Test Matrix
+
+| Git Version | Base Image | Source | Priority |
+|-------------|------------|--------|----------|
+| 2.17.x | ubuntu:18.04 | Ubuntu 18.04 LTS | High |
+| 2.25.x | ubuntu:20.04 | Ubuntu 20.04 LTS | High |
+| 2.34.x | ubuntu:22.04 | Ubuntu 22.04 LTS | High |
+| 2.39.x | alpine + git | macOS Xcode CLT equivalent | High |
+| 2.43.x | ubuntu:24.04 | Ubuntu 24.04 LTS | High |
+| 2.52.x | alpine + git@edge | Latest release | Medium |
+
+### Dockerfile Structure
+
+```dockerfile
+# docker/Dockerfile
+
+# ============================================================================
+# Stage 1: Build the Go binary
+# ============================================================================
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN go build -o /gitscan ./cmd/gitscan-server
+RUN go test ./...
+
+# ============================================================================
+# Stage 2: Cache opengrep and rules
+# ============================================================================
+FROM ghcr.io/opengrep/opengrep:latest AS opengrep-cache
+
+# Rules are already in the image at /rules or similar
+# We just use this stage to copy from later
+
+# ============================================================================
+# Stage 3: Production image
+# ============================================================================
+FROM alpine:latest AS production
+
+RUN apk add --no-cache git ca-certificates
+
+COPY --from=builder /gitscan /usr/local/bin/gitscan
+COPY --from=opengrep-cache /usr/local/bin/opengrep /usr/local/bin/opengrep
+# COPY --from=opengrep-cache /rules /etc/gitscan/rules
+
+EXPOSE 8080 8443
+ENTRYPOINT ["/usr/local/bin/gitscan"]
+```
+
+### Git Version Test Container Template
+
+```dockerfile
+# docker/git-test/Dockerfile.template
+# Built with: --build-arg GIT_IMAGE=ubuntu:22.04
+
+ARG GIT_IMAGE=ubuntu:22.04
+FROM ${GIT_IMAGE} AS git-test
+
+# Install git (method varies by base image)
+RUN apt-get update && apt-get install -y git curl || \
+    apk add --no-cache git curl
+
+# Copy built artifacts from builder
+COPY --from=builder /gitscan /usr/local/bin/gitscan
+COPY --from=opengrep-cache /usr/local/bin/opengrep /usr/local/bin/opengrep
+
+# Copy test script
+COPY test/git-compat-test.sh /test.sh
+RUN chmod +x /test.sh
+
+# Run tests at build time
+RUN /test.sh
+```
+
+### docker-compose.test.yml
+
+```yaml
+version: '3.8'
+
+services:
+  # Builder service - compiles and runs unit tests
+  builder:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: builder
+    volumes:
+      - build-artifacts:/artifacts
+    command: >
+      sh -c "cp /gitscan /artifacts/ && echo 'Build complete'"
+
+  # Git version test services - run in parallel
+  test-git-2.17:
+    build:
+      context: .
+      dockerfile: docker/git-test/Dockerfile
+      args:
+        GIT_IMAGE: ubuntu:18.04
+    depends_on:
+      - builder
+    network_mode: "service:gitscan-server"
+
+  test-git-2.25:
+    build:
+      context: .
+      dockerfile: docker/git-test/Dockerfile
+      args:
+        GIT_IMAGE: ubuntu:20.04
+    depends_on:
+      - builder
+
+  test-git-2.34:
+    build:
+      context: .
+      dockerfile: docker/git-test/Dockerfile
+      args:
+        GIT_IMAGE: ubuntu:22.04
+    depends_on:
+      - builder
+
+  test-git-2.43:
+    build:
+      context: .
+      dockerfile: docker/git-test/Dockerfile
+      args:
+        GIT_IMAGE: ubuntu:24.04
+    depends_on:
+      - builder
+
+  test-git-latest:
+    build:
+      context: .
+      dockerfile: docker/git-test/Dockerfile
+      args:
+        GIT_IMAGE: alpine:edge
+    depends_on:
+      - builder
+
+  # Server for integration tests
+  gitscan-server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: production
+    depends_on:
+      - builder
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  build-artifacts:
+```
+
+### Build Commands
 
 ```bash
-#!/bin/bash
-# test/git-compat.sh
+# Full build with all tests (CI/CD)
+docker compose -f docker-compose.test.yml build
 
-VERSIONS=("2.17" "2.25" "2.34" "2.39" "2.43" "2.52")
+# Build only (skip git version tests for local dev)
+docker build --target production -t gitscan:latest .
 
-for v in "${VERSIONS[@]}"; do
-    echo "Testing git $v..."
-    docker run --rm gitscan-test-git-$v \
-        git clone https://localhost:8443/test/repo 2>&1 | \
-        grep -q "GITSCAN SECURITY REPORT" && echo "✓ Pass" || echo "✗ Fail"
-done
+# Run specific git version test
+docker compose -f docker-compose.test.yml build test-git-2.43
+
+# Run all tests in parallel
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
 ```
 
 ---

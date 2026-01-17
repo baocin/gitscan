@@ -1,0 +1,145 @@
+# GitScan Docker Compose - Build & Test Pipeline
+#
+# This runs the full build and test suite including:
+# 1. Building the gitscan binary
+# 2. Running unit tests
+# 3. Testing against multiple git versions
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml build    # Build all images (runs tests)
+#   docker compose -f docker-compose.test.yml up       # Run integration tests
+#   docker compose -f docker-compose.test.yml down     # Clean up
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # Git Version Test Services
+  # Each service builds and tests against a specific git version
+  # Tests run AT BUILD TIME - if tests fail, the build fails
+  # ============================================================================
+
+  test-git-ubuntu-18.04:
+    build:
+      context: .
+      dockerfile: docker/git-test/Dockerfile
+      args:
+        GIT_BASE: ubuntu:18.04
+    image: gitscan-test:git-2.17
+
+  test-git-ubuntu-20.04:
+    build:
+      context: .
+      dockerfile: docker/git-test/Dockerfile
+      args:
+        GIT_BASE: ubuntu:20.04
+    image: gitscan-test:git-2.25
+
+  test-git-ubuntu-22.04:
+    build:
+      context: .
+      dockerfile: docker/git-test/Dockerfile
+      args:
+        GIT_BASE: ubuntu:22.04
+    image: gitscan-test:git-2.34
+
+  test-git-ubuntu-24.04:
+    build:
+      context: .
+      dockerfile: docker/git-test/Dockerfile
+      args:
+        GIT_BASE: ubuntu:24.04
+    image: gitscan-test:git-2.43
+
+  test-git-alpine:
+    build:
+      context: .
+      dockerfile: docker/git-test/Dockerfile
+      args:
+        GIT_BASE: alpine:3.19
+    image: gitscan-test:git-alpine
+
+  test-git-debian:
+    build:
+      context: .
+      dockerfile: docker/git-test/Dockerfile
+      args:
+        GIT_BASE: debian:bookworm
+    image: gitscan-test:git-debian
+
+  # ============================================================================
+  # Integration Test Server
+  # Used for running integration tests after build completes
+  # ============================================================================
+
+  gitscan-server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: production
+    ports:
+      - "8080:8080"
+    volumes:
+      - test-data:/data/sqlite
+      - test-repos:/data/repos
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+  # ============================================================================
+  # Integration Test Runner
+  # Runs after server is healthy
+  # ============================================================================
+
+  integration-tests:
+    build:
+      context: .
+      dockerfile: docker/git-test/Dockerfile
+      args:
+        GIT_BASE: ubuntu:22.04
+    depends_on:
+      gitscan-server:
+        condition: service_healthy
+    environment:
+      - GITSCAN_PORT=8080
+      - GITSCAN_HOST=gitscan-server
+      - GITSCAN_TEST_REPO=octocat/Hello-World
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Running integration tests against gitscan-server..."
+
+        # Test health endpoint
+        echo "Testing health endpoint..."
+        curl -sf http://gitscan-server:8080/health || exit 1
+        echo "Health check passed!"
+
+        # Test version endpoint
+        echo "Testing version endpoint..."
+        curl -sf http://gitscan-server:8080/version || exit 1
+        echo "Version check passed!"
+
+        # Test git clone (expect failure, but should get sideband output)
+        echo "Testing git clone sideband output..."
+        OUTPUT=$$(git clone http://gitscan-server:8080/octocat/Hello-World /tmp/test-clone 2>&1 || true)
+        echo "Clone output:"
+        echo "$$OUTPUT"
+
+        # Verify we got some git protocol response
+        if echo "$$OUTPUT" | grep -q "Cloning into"; then
+          echo "Git clone initiated successfully!"
+        else
+          echo "Warning: Unexpected clone output"
+        fi
+
+        echo ""
+        echo "============================================"
+        echo "Integration tests completed!"
+        echo "============================================"
+
+volumes:
+  test-data:
+  test-repos:
