@@ -14,8 +14,8 @@
 # ============================================================================
 FROM golang:1.22-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git gcc musl-dev sqlite-dev
+# Install build dependencies (including static libs for fully static binary)
+RUN apk add --no-cache git gcc musl-dev sqlite-dev sqlite-static
 
 WORKDIR /src
 
@@ -29,9 +29,10 @@ COPY . .
 # Download dependencies (in case go.sum didn't exist)
 RUN go mod tidy
 
-# Build the binary
+# Build the binary with static linking for portability
 RUN CGO_ENABLED=1 GOOS=linux go build \
-    -ldflags="-s -w -X main.Version=$(git describe --tags --always 2>/dev/null || echo 'dev') \
+    -ldflags="-s -w -linkmode external -extldflags '-static' \
+              -X main.Version=$(git describe --tags --always 2>/dev/null || echo 'dev') \
               -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
               -X main.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')" \
     -o /gitscan \
