@@ -4,6 +4,12 @@ set -e
 # git.vet Update Script
 # Run as root to update to latest version
 
+# Check for root
+if [ "$EUID" -ne 0 ]; then
+    echo "Please run as root: sudo $0"
+    exit 1
+fi
+
 echo "=== Updating git.vet ==="
 
 # Stop service first for clean update
