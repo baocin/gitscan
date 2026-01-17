@@ -164,9 +164,10 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	}
 
 	// Build opengrep command - requires "scan" subcommand
+	// Use --sarif for SARIF output format (not --json which is semgrep native format)
 	args := []string{
 		"scan",
-		"--json",
+		"--sarif",
 	}
 
 	if s.rulesPath != "" {
