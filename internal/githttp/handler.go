@@ -365,7 +365,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	dbScan := &db.Scan{
 		RepoID:         repo.ID,
 		CommitSHA:      repo.LastCommitSHA,
-		ResultsJSON:    scanResult.RawJSON,
+		ResultsJSON:    scanResult.FindingsJSON,
 		CriticalCount:  scanResult.CriticalCount,
 		HighCount:      scanResult.HighCount,
 		MediumCount:    scanResult.MediumCount,

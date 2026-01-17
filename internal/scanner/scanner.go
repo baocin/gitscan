@@ -82,7 +82,7 @@ type Result struct {
 	InfoCount     int
 	FilesScanned  int
 	Duration      time.Duration
-	RawJSON       string
+	FindingsJSON  string // JSON array of Finding structs (not raw SARIF)
 	ScannerUsed   string // "opengrep", "semgrep", or "mock"
 }
 
@@ -263,11 +263,11 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	result, err := parseSARIFOutput(jsonOutput.String(), totalFiles, startTime)
 	if err != nil {
 		log.Printf("[scanner] SARIF parse error: %v", err)
-		// If parsing fails, return basic result
+		// If parsing fails, return basic result with empty findings
 		return &Result{
 			FilesScanned: totalFiles,
 			Duration:     time.Since(startTime),
-			RawJSON:      jsonOutput.String(),
+			FindingsJSON: `[]`,
 			ScannerUsed:  s.binaryPath,
 		}, nil
 	}
@@ -290,7 +290,7 @@ func (s *Scanner) mockScan(repoPath string, totalFiles int, startTime time.Time)
 		InfoCount:     0,
 		FilesScanned:  totalFiles,
 		Duration:      time.Since(startTime),
-		RawJSON:       `{"version":"2.1.0","runs":[{"results":[]}]}`,
+		FindingsJSON:  `[]`,
 	}, nil
 }
 
@@ -300,7 +300,7 @@ func parseSARIFOutput(jsonStr string, totalFiles int, startTime time.Time) (*Res
 		return &Result{
 			FilesScanned: totalFiles,
 			Duration:     time.Since(startTime),
-			RawJSON:      jsonStr,
+			FindingsJSON: `[]`,
 		}, nil
 	}
 
@@ -313,7 +313,6 @@ func parseSARIFOutput(jsonStr string, totalFiles int, startTime time.Time) (*Res
 		Findings:     []Finding{},
 		FilesScanned: totalFiles,
 		Duration:     time.Since(startTime),
-		RawJSON:      jsonStr,
 	}
 
 	// Build rule map for severity lookup
@@ -364,6 +363,14 @@ func parseSARIFOutput(jsonStr string, totalFiles int, startTime time.Time) (*Res
 				result.InfoCount++
 			}
 		}
+	}
+
+	// Serialize findings to JSON for storage (not raw SARIF)
+	findingsBytes, err := json.Marshal(result.Findings)
+	if err != nil {
+		result.FindingsJSON = `[]`
+	} else {
+		result.FindingsJSON = string(findingsBytes)
 	}
 
 	return result, nil
