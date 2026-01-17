@@ -1,13 +1,17 @@
-# GitScan Master Plan
+# git.vet Master Plan
 
 > **Zero-install security scanning for git repositories via protocol-level integration**
 
 ## Overview
 
-GitScan is a security scanning tool that works with standard `git clone` commands - no installation required on the client. Users simply prefix their clone URL:
+git.vet is a security scanning tool that works with standard `git clone` commands - no installation required on the client. Users simply replace the git host with git.vet and include the original host in the path:
 
 ```bash
-git clone https://gitscan.github.com/user/repo
+# Instead of:
+git clone https://github.com/user/repo
+
+# Use:
+git clone https://git.vet/github.com/user/repo
 ```
 
 Instead of cloning, they receive a security scan report displayed directly in their terminal.
@@ -46,18 +50,18 @@ Git's smart HTTP protocol includes a **sideband channel** for sending progress m
 ### Standard Flow (Report Only)
 
 ```
-$ git clone https://gitscan.github.com/facebook/react
+$ git clone https://git.vet/github.com/facebook/react
 Cloning into 'react'...
 remote:
-remote: ⠋ [gitscan] Fetching repository...
-remote: ⠙ [gitscan] Fetched. 142MB, 4,521 files
-remote: ⠹ [gitscan] Scanning with opengrep...
-remote: ⠸ [gitscan] Progress: 1,204 / 4,521 files (26%)
-remote: ⠼ [gitscan] Progress: 3,102 / 4,521 files (68%)
-remote: ✓ [gitscan] Scan complete!
+remote: ⠋ [git.vet] Fetching repository...
+remote: ⠙ [git.vet] Fetched. 142MB, 4,521 files
+remote: ⠹ [git.vet] Scanning with opengrep...
+remote: ⠸ [git.vet] Progress: 1,204 / 4,521 files (26%)
+remote: ⠼ [git.vet] Progress: 3,102 / 4,521 files (68%)
+remote: ✓ [git.vet] Scan complete!
 remote:
 remote: ╔══════════════════════════════════════════════════════════════════╗
-remote: ║  GITSCAN SECURITY REPORT                                         ║
+remote: ║  GIT.VET SECURITY REPORT                                         ║
 remote: ║  Repository: facebook/react                                      ║
 remote: ║  Commit: a1b2c3d4e5f6                                            ║
 remote: ║  Scanned: 4,521 files in 3.2s                                    ║
@@ -72,7 +76,7 @@ remote: ║  HIGH: Unsafe innerHTML assignment                               ║
 remote: ║  └─ fixtures/dom/src/components/Editor.js:156                    ║
 remote: ║                                                                  ║
 remote: ╠══════════════════════════════════════════════════════════════════╣
-remote: ║  Full report: https://gitscan.io/r/fb-react-a1b2c3               ║
+remote: ║  Full report: https://git.vet/r/fb-react-a1b2c3               ║
 remote: ║  To clone: git clone https://github.com/facebook/react           ║
 remote: ╚══════════════════════════════════════════════════════════════════╝
 remote:
@@ -83,10 +87,113 @@ fatal: Could not read from remote repository.
 
 | URL Pattern | Behavior |
 |-------------|----------|
-| `gitscan.github.com/user/repo` | Scan and report (fail clone) |
-| `gitscan.github.com/clone/user/repo` | Scan, report, then complete clone |
-| `gitscan.github.com/plain/user/repo` | Report without box-drawing/unicode |
-| `gitscan.github.com/json/user/repo` | Output raw JSON report |
+| `git.vet/github.com/user/repo` | Scan and report (fail clone) |
+| `git.vet/clone/github.com/user/repo` | Scan, report, then complete clone |
+| `git.vet/plain/github.com/user/repo` | Report without box-drawing/unicode |
+| `git.vet/json/github.com/user/repo` | Output raw JSON report |
+
+### Supported Git Hosts
+
+| Host | Path Format |
+|------|-------------|
+| GitHub | `git.vet/github.com/owner/repo` |
+| GitLab | `git.vet/gitlab.com/owner/repo` |
+| Bitbucket | `git.vet/bitbucket.org/owner/repo` |
+
+---
+
+## Advanced Features
+
+### Client Disconnect Detection (Ctrl+C)
+
+When a user presses Ctrl+C during a scan, the HTTP connection closes. We detect this via Go's `context.Done()` and immediately abort processing to save compute:
+
+```go
+select {
+case <-ctx.Done():
+    return // Client disconnected, abort
+default:
+    // Continue processing
+}
+```
+
+This check is performed:
+- Before starting preflight checks
+- During repository fetch
+- During scan execution
+- Between each major step
+
+### Private Repository Warning
+
+When a private repo is detected (user provides authentication), we show a 10-second countdown warning:
+
+```
+$ git clone https://git.vet/github.com/user/private-repo
+Cloning into 'private-repo'...
+remote:
+remote: ╔══════════════════════════════════════════════════════════════════╗
+remote: ║  ⚠  PRIVATE REPOSITORY DETECTED                                  ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
+remote: ║  Your private repository code will be analyzed on our servers.   ║
+remote: ║  Code is deleted immediately after scanning.                     ║
+remote: ║                                                                  ║
+remote: ║  Press Ctrl+C now to cancel if you do not consent.               ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
+remote: ║  Skip this delay: https://git.vet/pricing                     ║
+remote: ╚══════════════════════════════════════════════════════════════════╝
+remote:
+remote: Starting scan in 10 seconds... (Ctrl+C to cancel)
+remote: Starting scan in 9 seconds... (Ctrl+C to cancel)
+...
+```
+
+- Paid users skip this delay
+- Detects auth via `Authorization` header or URL credentials
+
+### Preflight Checks
+
+Before/during cloning, we perform resource checks:
+
+1. **Disk Space**: Verify server has sufficient free space
+2. **Data Transfer Limit**: Monitor clone progress, abort if >500MB transferred
+3. **Rate Limits**: Check request quotas
+
+**Why no API-based size check?**
+- GitHub, GitLab, Bitbucket all have different APIs
+- Unauthenticated API rate limits are very low (60 req/hour for GitHub)
+- API-reported sizes are often inaccurate (doesn't include LFS, may be stale)
+
+**Transfer-based limiting is better:**
+```go
+// Monitor git clone output and abort if too large
+cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", repoURL, localPath)
+// Wrap stdout/stderr to count bytes transferred
+// Abort if threshold exceeded
+```
+
+This approach works universally across all git hosts without requiring API keys.
+
+### Queue Management
+
+Separate processing queues for public vs private repos:
+
+| Queue | Concurrent Slots | Priority |
+|-------|------------------|----------|
+| Public (free) | 10 | Low |
+| Private (free) | 3 | Normal |
+| Paid tier | Dedicated | High |
+
+This prevents free private repo scans from blocking public scans.
+
+### Shallow Clone Optimization
+
+Server always uses shallow clone to minimize disk and bandwidth:
+
+```bash
+git clone --depth 1 --single-branch --no-tags <repo>
+```
+
+This typically reduces clone time by 80-95% for repos with long history.
 
 ---
 
@@ -254,10 +361,10 @@ When rate limited, return a friendly sideband message:
 
 ```
 remote:
-remote: ⚠ [gitscan] Rate limit exceeded
+remote: ⚠ [git.vet] Rate limit exceeded
 remote:
 remote: You've made too many requests. Please wait a moment.
-remote: If you need higher limits, visit: https://gitscan.io/pricing
+remote: If you need higher limits, visit: https://git.vet/pricing
 remote:
 fatal: Could not read from remote repository.
 ```
@@ -387,7 +494,7 @@ func (h *Handler) showProgress(sb *SidebandWriter, scanner *Scanner) {
     for {
         select {
         case progress := <-scanner.Progress():
-            sb.WriteProgress(fmt.Sprintf("%s [gitscan] Scanning: %d/%d files (%d%%)",
+            sb.WriteProgress(fmt.Sprintf("%s [git.vet] Scanning: %d/%d files (%d%%)",
                 spinnerFrames[frame%len(spinnerFrames)],
                 progress.Done, progress.Total, progress.Percent))
             frame++
@@ -410,7 +517,7 @@ func (h *Handler) showProgress(sb *SidebandWriter, scanner *Scanner) {
 **Unicode mode (default):**
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║  GITSCAN SECURITY REPORT                                     ║
+║  GIT.VET SECURITY REPORT                                     ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  ✗ 2 Critical   ⚠ 5 High   ◆ 12 Medium   ○ 23 Low           ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -419,7 +526,7 @@ func (h *Handler) showProgress(sb *SidebandWriter, scanner *Scanner) {
 **Plain mode (`/plain/` URL):**
 ```
 ================================================================
-  GITSCAN SECURITY REPORT
+  GIT.VET SECURITY REPORT
 ================================================================
   [X] 2 Critical   [!] 5 High   [*] 12 Medium   [-] 23 Low
 ================================================================
@@ -790,7 +897,7 @@ gitscan/
                     │   Cloudflare    │
                     │   (DNS + CDN)   │
                     │                 │
-                    │ gitscan.github.com → Hetzner IP
+                    │ git.vet → Hetzner IP
                     └─────────────────┘
 ```
 
@@ -878,10 +985,9 @@ services:
 
 ## Open Questions
 
-1. **Domain**: Is `gitscan.github.com` achievable? May need `gitscan.io` or similar
-2. **Pricing**: Free tier limits? Paid tiers for higher rate limits?
-3. **Private repos**: OAuth flow complexity - worth it for v1?
-4. **Clone mode**: Should we support actually completing the clone after scan?
+1. **Pricing**: Free tier limits? Paid tiers for higher rate limits?
+2. **Private repos**: OAuth flow complexity - worth it for v1?
+3. **Clone mode**: Should we support actually completing the clone after scan?
 
 ---
 

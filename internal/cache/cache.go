@@ -76,12 +76,13 @@ func New(database *db.DB, cfg Config) (*RepoCache, error) {
 }
 
 // FetchRepo fetches or updates a repository, returning cache info
-func (c *RepoCache) FetchRepo(ctx context.Context, repoPath string, progressFn ProgressFunc) (*CachedRepo, error) {
+// repoPath is the unique identifier (e.g., "github.com/user/repo")
+// cloneURL is the full git clone URL (e.g., "https://github.com/user/repo.git")
+func (c *RepoCache) FetchRepo(ctx context.Context, repoPath, cloneURL string, progressFn ProgressFunc) (*CachedRepo, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Construct GitHub URL
-	repoURL := fmt.Sprintf("https://github.com/%s.git", repoPath)
+	repoURL := cloneURL
 
 	// Check if we have this repo cached
 	dbRepo, err := c.db.GetRepoByURL(repoPath)
@@ -266,6 +267,11 @@ func (c *RepoCache) getRepoStats(repoPath string) (sizeBytes int64, fileCount in
 		return nil
 	})
 	return
+}
+
+// GetCacheDir returns the cache directory path
+func (c *RepoCache) GetCacheDir() string {
+	return c.cacheDir
 }
 
 // Cleanup removes old cached repositories

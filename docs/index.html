@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>git.vet - Zero-Install Security Scanning for Git Repos</title>
+    <meta name="description" content="Scan any git repository for security vulnerabilities with just git clone. No installation required.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --bg-secondary: #161b22;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red: #f85149;
+            --purple: #a371f7;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Header */
+        header {
+            padding: 24px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .logo span {
+            color: var(--accent);
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-left: 32px;
+            font-size: 0.95rem;
+            transition: color 0.2s;
+        }
+
+        nav a:hover {
+            color: var(--text);
+        }
+
+        /* Hero */
+        .hero {
+            padding: 100px 0 80px;
+            text-align: center;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            line-height: 1.1;
+        }
+
+        .hero h1 span {
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin: 0 auto 40px;
+        }
+
+        /* Terminal Demo */
+        .terminal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: left;
+            overflow: hidden;
+        }
+
+        .terminal-header {
+            background: var(--bg);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .terminal-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .terminal-dot.red { background: var(--red); }
+        .terminal-dot.yellow { background: var(--yellow); }
+        .terminal-dot.green { background: var(--green); }
+
+        .terminal-title {
+            flex: 1;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .terminal-body {
+            padding: 24px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            line-height: 1.7;
+        }
+
+        .terminal-line {
+            margin-bottom: 4px;
+        }
+
+        .prompt {
+            color: var(--green);
+        }
+
+        .command {
+            color: var(--text);
+        }
+
+        .remote {
+            color: var(--text-muted);
+        }
+
+        .highlight-green { color: var(--green); }
+        .highlight-yellow { color: var(--yellow); }
+        .highlight-red { color: var(--red); }
+        .highlight-blue { color: var(--accent); }
+
+        /* Features */
+        .features {
+            padding: 80px 0;
+        }
+
+        .features h2 {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 60px;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 32px;
+        }
+
+        .feature {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 32px;
+        }
+
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 16px;
+        }
+
+        .feature h3 {
+            font-size: 1.25rem;
+            margin-bottom: 12px;
+        }
+
+        .feature p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        /* How it works */
+        .how-it-works {
+            padding: 80px 0;
+            border-top: 1px solid var(--border);
+        }
+
+        .how-it-works h2 {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 60px;
+        }
+
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 40px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .step {
+            text-align: center;
+        }
+
+        .step-number {
+            width: 48px;
+            height: 48px;
+            background: var(--accent);
+            color: var(--bg);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 1.25rem;
+            margin: 0 auto 20px;
+        }
+
+        .step h3 {
+            margin-bottom: 12px;
+        }
+
+        .step p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        /* Supported Hosts */
+        .hosts {
+            padding: 80px 0;
+            border-top: 1px solid var(--border);
+        }
+
+        .hosts h2 {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 40px;
+        }
+
+        .hosts-grid {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            flex-wrap: wrap;
+            margin-bottom: 40px;
+        }
+
+        .host-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px 32px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+        }
+
+        .host-card code {
+            color: var(--accent);
+        }
+
+        /* CTA */
+        .cta {
+            padding: 100px 0;
+            text-align: center;
+            border-top: 1px solid var(--border);
+        }
+
+        .cta h2 {
+            font-size: 2.5rem;
+            margin-bottom: 24px;
+        }
+
+        .cta p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            margin-bottom: 40px;
+        }
+
+        .cta-command {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px 32px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.1rem;
+            display: inline-block;
+        }
+
+        .cta-command .prompt {
+            color: var(--green);
+        }
+
+        /* Footer */
+        footer {
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+
+            .terminal-body {
+                font-size: 0.75rem;
+                padding: 16px;
+            }
+
+            nav {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container header-content">
+            <a href="/" class="logo">git<span>.vet</span></a>
+            <nav>
+                <a href="https://github.com/baocin/gitscan">GitHub</a>
+                <a href="https://github.com/baocin/gitscan/blob/main/MASTER_PLAN.md">Docs</a>
+            </nav>
+        </div>
+    </header>
+
+    <section class="hero">
+        <div class="container">
+            <h1>Security scan any repo<br>with <span>git clone</span></h1>
+            <p>Zero installation. Just replace your git host with git.vet and get instant security analysis.</p>
+
+            <div class="terminal">
+                <div class="terminal-header">
+                    <div class="terminal-dot red"></div>
+                    <div class="terminal-dot yellow"></div>
+                    <div class="terminal-dot green"></div>
+                    <span class="terminal-title">Terminal</span>
+                </div>
+                <div class="terminal-body">
+                    <div class="terminal-line"><span class="prompt">$</span> <span class="command">git clone https://git.vet/github.com/facebook/react</span></div>
+                    <div class="terminal-line">Cloning into 'react'...</div>
+                    <div class="terminal-line remote">remote: <span class="highlight-green">✓</span> [git.vet] Fetched. 4,521 files</div>
+                    <div class="terminal-line remote">remote: <span class="highlight-blue">⠸</span> [git.vet] Scanning with opengrep...</div>
+                    <div class="terminal-line remote">remote: <span class="highlight-green">✓</span> [git.vet] Scan complete!</div>
+                    <div class="terminal-line remote">remote:</div>
+                    <div class="terminal-line remote">remote: ┌──────────────────────────────────────────────────┐</div>
+                    <div class="terminal-line remote">remote: │  <strong>GIT.VET SECURITY REPORT</strong>                       │</div>
+                    <div class="terminal-line remote">remote: │  Repository: github.com/facebook/react          │</div>
+                    <div class="terminal-line remote">remote: ├──────────────────────────────────────────────────┤</div>
+                    <div class="terminal-line remote">remote: │  <span class="highlight-red">✗ 0 Critical</span>   <span class="highlight-yellow">⚠ 2 High</span>   ◆ 14 Medium        │</div>
+                    <div class="terminal-line remote">remote: └──────────────────────────────────────────────────┘</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="features">
+        <div class="container">
+            <h2>Why git.vet?</h2>
+            <div class="features-grid">
+                <div class="feature">
+                    <div class="feature-icon">🚀</div>
+                    <h3>Zero Installation</h3>
+                    <p>Works anywhere git runs. No CLI tools, no browser extensions, no signup. Just change the URL.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Instant Results</h3>
+                    <p>Shallow clones for speed. Results stream in real-time via git protocol sideband messages.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Private Repos Supported</h3>
+                    <p>Pass your credentials through. Code is scanned and immediately deleted. Nothing stored.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Powered by Opengrep</h3>
+                    <p>LGPL-licensed static analysis. Same rules as semgrep, fully open source.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">📊</div>
+                    <h3>Multiple Output Formats</h3>
+                    <p>Human-readable reports, JSON for CI/CD, or plain text for minimal terminals.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🌐</div>
+                    <h3>Multi-Host Support</h3>
+                    <p>GitHub, GitLab, Bitbucket. Any public git repository can be scanned.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="how-it-works">
+        <div class="container">
+            <h2>How It Works</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h3>Change the URL</h3>
+                    <p>Replace github.com with git.vet/github.com</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h3>Run git clone</h3>
+                    <p>We fetch, scan, and stream results via git protocol</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h3>Review findings</h3>
+                    <p>Security report appears right in your terminal</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="hosts">
+        <div class="container">
+            <h2>Supported Hosts</h2>
+            <div class="hosts-grid">
+                <div class="host-card">
+                    GitHub<br>
+                    <code>git.vet/github.com/owner/repo</code>
+                </div>
+                <div class="host-card">
+                    GitLab<br>
+                    <code>git.vet/gitlab.com/owner/repo</code>
+                </div>
+                <div class="host-card">
+                    Bitbucket<br>
+                    <code>git.vet/bitbucket.org/owner/repo</code>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="cta">
+        <div class="container">
+            <h2>Try it now</h2>
+            <p>Scan any public repository in seconds.</p>
+            <div class="cta-command">
+                <span class="prompt">$</span> git clone https://git.vet/github.com/your/repo
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>
+                <a href="https://github.com/baocin/gitscan">Open Source</a> ·
+                Powered by <a href="https://github.com/opengrep/opengrep">Opengrep</a> ·
+                Built with Go
+            </p>
+        </div>
+    </footer>
+</body>
+</html>
