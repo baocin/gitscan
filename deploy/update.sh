@@ -2,7 +2,7 @@
 set -e
 
 # git.vet Update Script
-# Run as root to update to latest version
+# Run as root: sudo ./deploy/update.sh
 
 # Check for root
 if [ "$EUID" -ne 0 ]; then
@@ -12,23 +12,30 @@ fi
 
 echo "=== Updating git.vet ==="
 
-# Stop service first for clean update
+# Stop service first
 echo "Stopping service..."
 systemctl stop gitvet || true
 
-# Clone fresh copy
+# Clone fresh copy from main
 cd /tmp
 rm -rf gitscan
-echo "Cloning latest code..."
-git clone --depth 1 https://github.com/baocin/gitscan.git
+echo "Cloning latest from main..."
+git clone --depth 1 --branch main https://github.com/baocin/gitscan.git
 cd gitscan
 
-# Build
+# Build locally first, then copy (avoids permission issues)
 echo "Building binary..."
-go build -o /opt/gitvet/git-vet-server ./cmd/gitscan-server
+go build -o git-vet-server ./cmd/gitscan-server
+
+echo "Installing binary..."
+cp git-vet-server /opt/gitvet/git-vet-server
 chown gitvet:gitvet /opt/gitvet/git-vet-server
 
-# Restart
+# Clear cache to force fresh scans
+echo "Clearing cache..."
+rm -rf /var/lib/gitvet/cache/*
+
+# Start service
 echo "Starting service..."
 systemctl start gitvet
 
