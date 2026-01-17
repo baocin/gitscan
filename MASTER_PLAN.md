@@ -36,6 +36,7 @@ Instead of cloning, they receive a security scan report displayed directly in th
 | Marketing Homepage | ✅ Done | `web/templates/index.html` |
 | Pricing Page | ✅ Done | `web/templates/pricing.html` |
 | Security Score (0-100) | ✅ Done | `internal/scanner/scanner.go` |
+| Invalid Repo Error Handling | ✅ Done | `internal/cache/cache.go`, `internal/githttp/handler.go` |
 
 ---
 
@@ -171,7 +172,7 @@ cmd := exec.CommandContext(ctx, "git", "clone",
 - [ ] Bitbucket branches and tags
 - [ ] Gitea branches and tags
 - [ ] Self-hosted GitLab instances
-- [ ] Invalid ref handling (graceful error)
+- [x] Invalid ref handling (graceful error) - `internal/cache/cache.go`
 
 ---
 

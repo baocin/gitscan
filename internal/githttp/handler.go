@@ -3,6 +3,7 @@ package githttp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -296,12 +297,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	}
 
 	if err != nil {
-		sb.WriteEmptyLine()
-		report.WriteBoxTop(boxWidth)
-		report.WriteBoxLine(sb.Color(Red, "ERROR: Failed to fetch repository"), boxWidth)
-		report.WriteBoxLine(err.Error(), boxWidth)
-		report.WriteBoxBottom(boxWidth)
-		sb.WriteEmptyLine()
+		h.writeFetchError(sb, report, parsed, err, boxWidth)
 		return
 	}
 
@@ -566,6 +562,115 @@ func (h *Handler) writeErrorResponse(w http.ResponseWriter, message string) {
 	sb := NewSidebandWriter(w, true)
 	sb.WriteError(message)
 	sb.Flush()
+}
+
+// writeFetchError writes a user-friendly error message based on the error type
+func (h *Handler) writeFetchError(sb *SidebandWriter, report *ReportWriter, parsed *ParsedPath, err error, boxWidth int) {
+	sb.WriteEmptyLine()
+	report.WriteBoxTop(boxWidth)
+
+	// Check for specific error types from cache package
+	var repoErr *cache.RepoError
+	if errors.As(err, &repoErr) {
+		switch {
+		case errors.Is(repoErr.Type, cache.ErrRepoNotFound):
+			report.WriteBoxLine(sb.Color(Red, "REPOSITORY NOT FOUND"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("The repository could not be found. Please check:", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("  - The repository URL is spelled correctly", boxWidth)
+			report.WriteBoxLine("  - The repository exists on "+parsed.Host, boxWidth)
+			report.WriteBoxLine("  - The repository is public (not private)", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine(sb.Color(Cyan, "Example usage:"), boxWidth)
+			report.WriteBoxLine("  git clone https://git.vet/github.com/owner/repo", boxWidth)
+
+		case errors.Is(repoErr.Type, cache.ErrRepoPrivate):
+			report.WriteBoxLine(sb.Color(Red, "PRIVATE REPOSITORY"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("This repository requires authentication.", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("git.vet can only scan public repositories.", boxWidth)
+			report.WriteBoxLine("For private repository scanning, consider:", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("  - Running opengrep locally on your machine", boxWidth)
+			report.WriteBoxLine("  - Using GitHub's built-in code scanning", boxWidth)
+
+		case errors.Is(repoErr.Type, cache.ErrNetworkError):
+			report.WriteBoxLine(sb.Color(Red, "CONNECTION ERROR"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("Could not connect to "+parsed.Host+".", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("This could be due to:", boxWidth)
+			report.WriteBoxLine("  - Network connectivity issues", boxWidth)
+			report.WriteBoxLine("  - The host being temporarily unavailable", boxWidth)
+			report.WriteBoxLine("  - DNS resolution problems", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("Please verify the URL and try again.", boxWidth)
+
+		case errors.Is(repoErr.Type, cache.ErrInvalidURL):
+			report.WriteBoxLine(sb.Color(Red, "INVALID URL"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("The repository URL format is invalid.", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine(sb.Color(Cyan, "Correct format:"), boxWidth)
+			report.WriteBoxLine("  git clone https://git.vet/<host>/<owner>/<repo>", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine(sb.Color(Cyan, "Examples:"), boxWidth)
+			report.WriteBoxLine("  git clone https://git.vet/github.com/torvalds/linux", boxWidth)
+			report.WriteBoxLine("  git clone https://git.vet/gitlab.com/inkscape/inkscape", boxWidth)
+
+		case errors.Is(repoErr.Type, cache.ErrCloneTimeout):
+			report.WriteBoxLine(sb.Color(Red, "CLONE TIMEOUT"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("The repository took too long to clone.", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("This can happen with:", boxWidth)
+			report.WriteBoxLine("  - Very large repositories", boxWidth)
+			report.WriteBoxLine("  - Slow network connections", boxWidth)
+			report.WriteBoxLine("  - Overloaded git servers", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("Please try again later.", boxWidth)
+
+		case errors.Is(repoErr.Type, cache.ErrRepoTooLarge):
+			report.WriteBoxLine(sb.Color(Red, "REPOSITORY TOO LARGE"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("This repository exceeds the size limit.", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("For large repositories, consider running opengrep", boxWidth)
+			report.WriteBoxLine("locally on your machine instead.", boxWidth)
+
+		case errors.Is(repoErr.Type, cache.ErrRateLimited):
+			report.WriteBoxLine(sb.Color(Yellow, "RATE LIMITED"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("The git host is rate limiting requests.", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("Please wait a few minutes and try again.", boxWidth)
+
+		default:
+			// Unknown RepoError type
+			report.WriteBoxLine(sb.Color(Red, "FETCH ERROR"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine(repoErr.Message, boxWidth)
+		}
+	} else {
+		// Generic error (not a RepoError)
+		report.WriteBoxLine(sb.Color(Red, "ERROR"), boxWidth)
+		report.WriteBoxMiddle(boxWidth)
+		report.WriteBoxLine("Failed to fetch repository:", boxWidth)
+		report.WriteBoxLine("", boxWidth)
+		// Truncate long error messages
+		errMsg := err.Error()
+		if len(errMsg) > 60 {
+			errMsg = errMsg[:57] + "..."
+		}
+		report.WriteBoxLine(errMsg, boxWidth)
+	}
+
+	report.WriteBoxMiddle(boxWidth)
+	report.WriteBoxLine(sb.Color(Cyan, "Questions? gitvet@steele.red"), boxWidth)
+	report.WriteBoxBottom(boxWidth)
+	sb.WriteEmptyLine()
 }
 
 // getClientIP extracts the client IP from the request
