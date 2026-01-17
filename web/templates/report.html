@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scan Report - git.vet</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -11,13 +12,16 @@
         :root {
             --bg: #0d1117;
             --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
             --border: #30363d;
             --text: #c9d1d9;
             --text-muted: #8b949e;
             --accent: #58a6ff;
             --green: #3fb950;
             --yellow: #d29922;
+            --orange: #db6d28;
             --red: #f85149;
+            --purple: #a371f7;
         }
 
         * {
@@ -69,35 +73,265 @@
             font-size: 0.95rem;
         }
 
+        nav a:hover {
+            color: var(--text);
+        }
+
         .report-container {
-            padding: 60px 0;
+            padding: 40px 0;
         }
 
         .report-header {
-            margin-bottom: 40px;
+            margin-bottom: 32px;
         }
 
         .report-header h1 {
-            font-size: 2rem;
+            font-size: 1.75rem;
             margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
 
-        .report-id {
+        .repo-link {
+            color: var(--accent);
+            text-decoration: none;
             font-family: 'JetBrains Mono', monospace;
-            color: var(--text-muted);
         }
 
-        .report-card {
+        .repo-link:hover {
+            text-decoration: underline;
+        }
+
+        .report-meta {
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .report-meta code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-tertiary);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .summary-card {
             background: var(--bg-secondary);
             border: 1px solid var(--border);
             border-radius: 12px;
-            padding: 32px;
+            padding: 20px;
+            text-align: center;
         }
 
-        .report-placeholder {
-            text-align: center;
-            padding: 60px;
+        .summary-card.critical {
+            border-color: var(--red);
+            background: rgba(248, 81, 73, 0.1);
+        }
+
+        .summary-card.high {
+            border-color: var(--orange);
+            background: rgba(219, 109, 40, 0.1);
+        }
+
+        .summary-card.medium {
+            border-color: var(--yellow);
+            background: rgba(210, 153, 34, 0.1);
+        }
+
+        .summary-card.low {
+            border-color: var(--green);
+            background: rgba(63, 185, 80, 0.1);
+        }
+
+        .summary-count {
+            font-size: 2.5rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+
+        .summary-card.critical .summary-count { color: var(--red); }
+        .summary-card.high .summary-count { color: var(--orange); }
+        .summary-card.medium .summary-count { color: var(--yellow); }
+        .summary-card.low .summary-count { color: var(--green); }
+
+        .summary-label {
+            font-size: 0.85rem;
             color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .findings-section {
+            margin-top: 40px;
+        }
+
+        .findings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .findings-header h2 {
+            font-size: 1.25rem;
+        }
+
+        .finding-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .finding-header {
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .finding-title {
+            flex: 1;
+        }
+
+        .finding-rule {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+
+        .finding-message {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .severity-badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .severity-badge.critical {
+            background: rgba(248, 81, 73, 0.2);
+            color: var(--red);
+        }
+
+        .severity-badge.high {
+            background: rgba(219, 109, 40, 0.2);
+            color: var(--orange);
+        }
+
+        .severity-badge.medium {
+            background: rgba(210, 153, 34, 0.2);
+            color: var(--yellow);
+        }
+
+        .severity-badge.low {
+            background: rgba(63, 185, 80, 0.2);
+            color: var(--green);
+        }
+
+        .severity-badge.info {
+            background: rgba(88, 166, 255, 0.2);
+            color: var(--accent);
+        }
+
+        .finding-location {
+            padding: 12px 20px;
+            background: var(--bg-tertiary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+        }
+
+        .finding-location a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .finding-location a:hover {
+            text-decoration: underline;
+        }
+
+        .finding-snippet {
+            padding: 16px 20px;
+            background: var(--bg);
+            overflow-x: auto;
+        }
+
+        .finding-snippet pre {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .line-number {
+            color: var(--text-muted);
+            user-select: none;
+            margin-right: 16px;
+        }
+
+        .no-findings {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .no-findings .icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+        }
+
+        .not-found {
+            text-align: center;
+            padding: 80px 20px;
+        }
+
+        .not-found h2 {
+            font-size: 1.5rem;
+            margin-bottom: 12px;
+        }
+
+        .not-found p {
+            color: var(--text-muted);
+            margin-bottom: 24px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: var(--accent);
+            color: var(--bg);
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
         }
 
         footer {
@@ -111,6 +345,21 @@
         footer a {
             color: var(--accent);
             text-decoration: none;
+        }
+
+        @media (max-width: 600px) {
+            .summary-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .finding-header {
+                flex-direction: column;
+            }
+
+            .report-meta {
+                flex-direction: column;
+                gap: 8px;
+            }
         }
     </style>
 </head>
@@ -127,22 +376,85 @@
 
     <section class="report-container">
         <div class="container">
+            {{if .Found}}
             <div class="report-header">
-                <h1>Scan Report</h1>
-                <p class="report-id">Report ID: {{.ReportID}}</p>
-            </div>
-            <div class="report-card">
-                <div class="report-placeholder">
-                    <p>Full web reports coming soon.</p>
-                    <p>For now, run the scan via git clone to see results in your terminal.</p>
+                <h1>
+                    <a href="https://{{.RepoName}}" class="repo-link">{{.RepoName}}</a>
+                </h1>
+                <div class="report-meta">
+                    <span>Commit: <code>{{.ShortCommit}}</code></span>
+                    <span>Scanned: {{.ScannedAt}}</span>
+                    <span>{{.FilesScanned}} files in {{.ScanDuration}}</span>
                 </div>
             </div>
+
+            <div class="summary-grid">
+                <div class="summary-card critical">
+                    <div class="summary-count">{{.CriticalCount}}</div>
+                    <div class="summary-label">Critical</div>
+                </div>
+                <div class="summary-card high">
+                    <div class="summary-count">{{.HighCount}}</div>
+                    <div class="summary-label">High</div>
+                </div>
+                <div class="summary-card medium">
+                    <div class="summary-count">{{.MediumCount}}</div>
+                    <div class="summary-label">Medium</div>
+                </div>
+                <div class="summary-card low">
+                    <div class="summary-count">{{.LowCount}}</div>
+                    <div class="summary-label">Low</div>
+                </div>
+            </div>
+
+            {{if .Findings}}
+            <div class="findings-section">
+                <div class="findings-header">
+                    <h2>Findings ({{.TotalFindings}})</h2>
+                </div>
+
+                {{range .Findings}}
+                <div class="finding-card">
+                    <div class="finding-header">
+                        <div class="finding-title">
+                            <div class="finding-rule">{{.RuleID}}</div>
+                            <div class="finding-message">{{.Message}}</div>
+                        </div>
+                        <span class="severity-badge {{.Severity | lower}}">{{.Severity}}</span>
+                    </div>
+                    <div class="finding-location">
+                        <a href="#">{{.Path}}:{{.StartLine}}</a>
+                    </div>
+                    {{if .Snippet}}
+                    <div class="finding-snippet">
+                        <pre><span class="line-number">{{.StartLine}}</span>{{.Snippet}}</pre>
+                    </div>
+                    {{end}}
+                </div>
+                {{end}}
+            </div>
+            {{else}}
+            <div class="no-findings">
+                <div class="icon">&#10003;</div>
+                <h3>No security issues found!</h3>
+                <p>This scan completed without detecting any vulnerabilities.</p>
+            </div>
+            {{end}}
+
+            {{else}}
+            <div class="not-found">
+                <h2>Report Not Found</h2>
+                <p>The scan report for ID <code>{{.ReportID}}</code> was not found.</p>
+                <a href="/" class="btn">Scan a Repository</a>
+            </div>
+            {{end}}
         </div>
     </section>
 
     <footer>
         <div class="container">
             <p>
+                <a href="mailto:gitvet@steele.red">gitvet@steele.red</a> ·
                 <a href="https://github.com/baocin/gitscan">Open Source</a> ·
                 Powered by <a href="https://github.com/opengrep/opengrep">Opengrep</a>
             </p>
