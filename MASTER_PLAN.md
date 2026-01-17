@@ -1,10 +1,10 @@
-# GitScan Master Plan
+# git.vet Master Plan
 
 > **Zero-install security scanning for git repositories via protocol-level integration**
 
 ## Overview
 
-GitScan is a security scanning tool that works with standard `git clone` commands - no installation required on the client. Users simply replace the git host with git.vet and include the original host in the path:
+git.vet is a security scanning tool that works with standard `git clone` commands - no installation required on the client. Users simply replace the git host with git.vet and include the original host in the path:
 
 ```bash
 # Instead of:
@@ -53,15 +53,15 @@ Git's smart HTTP protocol includes a **sideband channel** for sending progress m
 $ git clone https://git.vet/github.com/facebook/react
 Cloning into 'react'...
 remote:
-remote: ⠋ [gitscan] Fetching repository...
-remote: ⠙ [gitscan] Fetched. 142MB, 4,521 files
-remote: ⠹ [gitscan] Scanning with opengrep...
-remote: ⠸ [gitscan] Progress: 1,204 / 4,521 files (26%)
-remote: ⠼ [gitscan] Progress: 3,102 / 4,521 files (68%)
-remote: ✓ [gitscan] Scan complete!
+remote: ⠋ [git.vet] Fetching repository...
+remote: ⠙ [git.vet] Fetched. 142MB, 4,521 files
+remote: ⠹ [git.vet] Scanning with opengrep...
+remote: ⠸ [git.vet] Progress: 1,204 / 4,521 files (26%)
+remote: ⠼ [git.vet] Progress: 3,102 / 4,521 files (68%)
+remote: ✓ [git.vet] Scan complete!
 remote:
 remote: ╔══════════════════════════════════════════════════════════════════╗
-remote: ║  GITSCAN SECURITY REPORT                                         ║
+remote: ║  GIT.VET SECURITY REPORT                                         ║
 remote: ║  Repository: facebook/react                                      ║
 remote: ║  Commit: a1b2c3d4e5f6                                            ║
 remote: ║  Scanned: 4,521 files in 3.2s                                    ║
@@ -361,7 +361,7 @@ When rate limited, return a friendly sideband message:
 
 ```
 remote:
-remote: ⚠ [gitscan] Rate limit exceeded
+remote: ⚠ [git.vet] Rate limit exceeded
 remote:
 remote: You've made too many requests. Please wait a moment.
 remote: If you need higher limits, visit: https://git.vet/pricing
@@ -494,7 +494,7 @@ func (h *Handler) showProgress(sb *SidebandWriter, scanner *Scanner) {
     for {
         select {
         case progress := <-scanner.Progress():
-            sb.WriteProgress(fmt.Sprintf("%s [gitscan] Scanning: %d/%d files (%d%%)",
+            sb.WriteProgress(fmt.Sprintf("%s [git.vet] Scanning: %d/%d files (%d%%)",
                 spinnerFrames[frame%len(spinnerFrames)],
                 progress.Done, progress.Total, progress.Percent))
             frame++
@@ -517,7 +517,7 @@ func (h *Handler) showProgress(sb *SidebandWriter, scanner *Scanner) {
 **Unicode mode (default):**
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║  GITSCAN SECURITY REPORT                                     ║
+║  GIT.VET SECURITY REPORT                                     ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  ✗ 2 Critical   ⚠ 5 High   ◆ 12 Medium   ○ 23 Low           ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -526,7 +526,7 @@ func (h *Handler) showProgress(sb *SidebandWriter, scanner *Scanner) {
 **Plain mode (`/plain/` URL):**
 ```
 ================================================================
-  GITSCAN SECURITY REPORT
+  GIT.VET SECURITY REPORT
 ================================================================
   [X] 2 Critical   [!] 5 High   [*] 12 Medium   [-] 23 Low
 ================================================================
