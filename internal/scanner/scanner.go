@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -182,6 +183,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, s.binaryPath, args...)
+	log.Printf("[scanner] Running: %s %s", s.binaryPath, strings.Join(args, " "))
 
 	// Capture stdout for JSON output
 	stdout, err := cmd.StdoutPipe()
@@ -260,6 +262,8 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	}
 
 	result.ScannerUsed = s.binaryPath
+	log.Printf("[scanner] Completed: %d findings (%d critical, %d high, %d medium, %d low) in %v",
+		len(result.Findings), result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount, result.Duration)
 	return result, nil
 }
 
