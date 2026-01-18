@@ -23,9 +23,9 @@ Instead of cloning, they receive a security scan report displayed directly in th
 | Git Smart HTTP Protocol | ✅ Done | `internal/githttp/` |
 | Opengrep/Semgrep Integration | ✅ Done | `internal/scanner/` |
 | SARIF Output Parsing | ✅ Done | `internal/scanner/scanner.go` |
-| Terminal Report (Sideband) | ✅ Done | `internal/githttp/handler.go` |
-| Web Report Page | ✅ Done | `web/templates/report.html` |
-| QR Code Generation | ✅ Done | `internal/githttp/qrcode.go` |
+| Terminal Report (Sideband) | ✅ Done | `internal/githttp/handler.go` (80-char width, critical-first sorting) |
+| Web Report Page | ✅ Done | `web/templates/report.html` (critical-first sorting) |
+| QR Code Generation | ✅ Done | `internal/githttp/qrcode.go` (High recovery, full blocks) |
 | License Detection | ✅ Done | `internal/license/license.go` |
 | Rate Limiting | ✅ Done | `internal/ratelimit/limiter.go` |
 | Repository Caching | ✅ Done | `internal/cache/cache.go` |
@@ -99,6 +99,10 @@ remote: ║  └─ fixtures/dom/src/components/Editor.js:156                   
 remote: ║                                                                  ║
 remote: ╠══════════════════════════════════════════════════════════════════╣
 remote: ║  Full report: https://git.vet/r/fb-react-a1b2c3               ║
+remote: ║                                                                  ║
+remote: ║          [Scannable QR code displays here]                       ║
+remote: ║         Scan QR to view full web report                          ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
 remote: ║  To clone: git clone https://github.com/facebook/react           ║
 remote: ╚══════════════════════════════════════════════════════════════════╝
 remote:
@@ -626,6 +630,58 @@ fmt.Sprintf("%s%s✗ 2 Critical%s", Bold, Red, Reset)
 
 For `/plain/` mode, colors are stripped.
 
+### Width Constraints
+
+All terminal output is constrained to **80 characters maximum width** for maximum compatibility across terminals, CI/CD systems, and logging tools:
+
+- Box drawing characters and borders fit within 80 chars
+- Finding messages are word-wrapped if needed
+- QR codes are sized to fit (2 chars per module with 4-module quiet zones)
+- Enforced at `internal/githttp/handler.go:301` via `boxWidth := 80`
+
+This ensures readable output even on minimal terminals, SSH sessions with small windows, and automated build logs.
+
+### Finding Display Order
+
+Findings are sorted by **severity from critical to info** (worst first) to prioritize the most important security issues:
+
+```go
+// Severity priority: critical → high → medium → low → info
+severityOrder := map[string]int{
+    "critical": 0, "error": 0, "high": 1, "warning": 1,
+    "medium": 2, "low": 3, "info": 4,
+}
+```
+
+This applies to both:
+- CLI output (terminal sideband messages)
+- Web reports (`web/templates/report.html`)
+
+Implementation: `SortFindingsBySeverity()` in `internal/githttp/handler.go`
+
+### QR Code Implementation
+
+QR codes linking to web reports use:
+
+- **Error correction**: High level (30% damage recovery) for reliable scanning
+- **Characters**: Full blocks (`██`) and spaces only - maximum terminal compatibility
+- **Module size**: 2 characters wide per module (fits 80-char width limit)
+- **Rendering**: 1 QR row per terminal line (taller but easier to scan)
+- **Quiet zones**: 4 modules on all sides (QR spec compliant)
+
+Implementation: `GenerateScaledQR()` in `internal/githttp/qrcode.go`
+
+Example QR display:
+```
+remote: ║  Full report: https://git.vet/r/abc123           ║
+remote: ║                                                  ║
+remote: ║        ██████  ██    ████████    ██████          ║
+remote: ║        ██  ██    ██  ██      ██  ██  ██          ║
+remote: ║        ██████      ████    ██    ██████          ║
+remote: ║         [Additional QR code rows...]             ║
+remote: ║          ^ Scan QR to view full report ^         ║
+```
+
 ---
 
 ## Build & Test Strategy
@@ -1111,6 +1167,7 @@ Detect common typosquatting patterns:
 
 ### Web Report Enhancements
 
+- ✅ **Marketing homepage highlights QR code feature** - Terminal demo shows QR code, "Beautiful Web Reports" feature card (`web/templates/index.html`)
 - Copy-to-clipboard button for clone command
 - One-click clone command generation
 - Download report as PDF/JSON
