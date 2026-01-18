@@ -280,6 +280,13 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 		return nil, classifyCloneError(string(output), err, repoURL, c.cloneTimeout)
 	}
 
+	// Make repo read-only immediately for security (prevents malicious code execution)
+	if err := makeReadOnly(localPath); err != nil {
+		// Log but don't fail - this is a defense-in-depth measure
+		// The scan can still proceed even if we can't lock down permissions
+		fmt.Fprintf(os.Stderr, "Warning: failed to set read-only permissions on %s: %v\n", localPath, err)
+	}
+
 	// Get commit SHA
 	commitSHA, err := c.getHeadCommit(localPath)
 	if err != nil {
@@ -335,6 +342,11 @@ func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn 
 		return c.cloneRepo(ctx, dbRepo.URL, repoURL, progressFn)
 	}
 
+	// Make repo writable temporarily for git operations
+	if err := makeWritable(dbRepo.LocalPath); err != nil {
+		return nil, fmt.Errorf("failed to make repo writable: %w", err)
+	}
+
 	// Fetch updates
 	ctx, cancel := context.WithTimeout(ctx, c.fetchTimeout)
 	defer cancel()
@@ -351,6 +363,11 @@ func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn 
 	cmd = exec.CommandContext(ctx, "git", "-C", dbRepo.LocalPath, "reset", "--hard", "origin/HEAD")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("reset failed: %s - %w", string(output), err)
+	}
+
+	// Make repo read-only again after git operations complete
+	if err := makeReadOnly(dbRepo.LocalPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to set read-only permissions on %s: %v\n", dbRepo.LocalPath, err)
 	}
 
 	// Get new commit SHA
@@ -474,4 +491,36 @@ func truncate(s string, length int) string {
 		return s
 	}
 	return s[:length]
+}
+
+// makeReadOnly recursively sets read-only permissions on a directory tree
+// Directories: 0555 (r-x, allows traversal but no writes)
+// Files: 0444 (r--, read-only, not executable)
+// This prevents malicious code from executing or modifying itself
+func makeReadOnly(path string) error {
+	return filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return os.Chmod(p, 0555)
+		}
+		return os.Chmod(p, 0444)
+	})
+}
+
+// makeWritable recursively sets writable permissions on a directory tree
+// Used temporarily for git operations (fetch/reset) that need write access
+// Directories: 0755 (rwx)
+// Files: 0644 (rw-)
+func makeWritable(path string) error {
+	return filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return os.Chmod(p, 0755)
+		}
+		return os.Chmod(p, 0644)
+	})
 }
