@@ -220,6 +220,7 @@ func (s *Scanner) buildScanArgs(repoPath string) []string {
 	args := []string{
 		"scan",
 		"--sarif",
+		"--disable-version-check", // Prevent permission errors on version cache file
 	}
 
 	// Add level-specific performance flags
@@ -429,20 +430,35 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 				return nil, fmt.Errorf("scanner was terminated (exit code -1). This may indicate timeout, out of memory, or a crash. Stderr: %s", stderrStr)
 			} else if exitErr.ExitCode() == 2 {
 				// Exit code 2 indicates configuration/rules error
-				// Combine stderr and stdout for error message (config errors may go to either)
-				errorMsg := stderrStr
-				if stdoutStr != "" && !strings.HasPrefix(stdoutStr, "{") {
-					if errorMsg != "" {
-						errorMsg = fmt.Sprintf("Stderr: %s; Stdout: %s", errorMsg, stdoutStr)
+				// BUT if we have valid SARIF output, the scan actually succeeded
+				// (exit code 2 may be from cleanup/version check failures)
+				if stdoutStr != "" && strings.HasPrefix(stdoutStr, "{") {
+					// We have JSON output, try to parse it
+					if _, parseErr := parseSARIFOutput(stdoutStr, totalFiles, startTime); parseErr == nil {
+						// Valid SARIF! Scan succeeded despite exit code 2
+						log.Printf("[scanner] Exit code 2 but valid SARIF output present, treating as success")
+						err = nil // Clear the error, proceed with normal parsing
 					} else {
-						errorMsg = stdoutStr
+						// Invalid SARIF, this is a real error
+						log.Printf("[scanner] Exit code 2 with invalid SARIF output: %v", parseErr)
+						return nil, fmt.Errorf("scanner configuration error (exit code 2): invalid SARIF output: %w", parseErr)
 					}
+				} else {
+					// No JSON output, this is a real configuration error
+					errorMsg := stderrStr
+					if stdoutStr != "" {
+						if errorMsg != "" {
+							errorMsg = fmt.Sprintf("Stderr: %s; Stdout: %s", errorMsg, stdoutStr)
+						} else {
+							errorMsg = stdoutStr
+						}
+					}
+					if errorMsg == "" {
+						errorMsg = "No error output captured. Common causes: network failure downloading rules (--config auto), permission issues accessing cache directory, or invalid configuration. Check logs above for cache directory info."
+					}
+					log.Printf("[scanner] Configuration error (exit code 2): %s", errorMsg)
+					return nil, fmt.Errorf("scanner configuration error (exit code 2): %s", errorMsg)
 				}
-				if errorMsg == "" {
-					errorMsg = "No error output captured. Common causes: network failure downloading rules (--config auto), permission issues accessing cache directory, or invalid configuration. Check logs above for cache directory info."
-				}
-				log.Printf("[scanner] Configuration error (exit code 2): %s", errorMsg)
-				return nil, fmt.Errorf("scanner configuration error (exit code 2): %s", errorMsg)
 			} else {
 				// Include stderr and exit code in error for debugging
 				log.Printf("[scanner] Failed with exit code %d: %s", exitErr.ExitCode(), stderrStr)
