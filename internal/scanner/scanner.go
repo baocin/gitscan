@@ -219,7 +219,6 @@ type SARIFOutput struct {
 func (s *Scanner) buildScanArgs(repoPath string) []string {
 	args := []string{
 		"scan",
-		"--quiet",
 		"--sarif",
 	}
 
@@ -293,6 +292,22 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	// Set QT_QPA_PLATFORM=offscreen to prevent Qt display errors on headless servers
 	cmd.Env = append(os.Environ(), "QT_QPA_PLATFORM=offscreen")
 	log.Printf("[scanner] Running (%s): %s %s", s.scanLevel, s.binaryPath, strings.Join(args, " "))
+
+	// Log environment info for debugging configuration issues
+	if stat, err := os.Stat(repoPath); err == nil {
+		log.Printf("[scanner] Repository path: %s (readable: %t)", repoPath, stat.IsDir())
+	} else {
+		log.Printf("[scanner] Repository path error: %v", err)
+	}
+
+	// Log cache directory for config auto downloads
+	if cacheDir, err := os.UserCacheDir(); err == nil {
+		log.Printf("[scanner] User cache dir: %s", cacheDir)
+		semgrepCache := filepath.Join(cacheDir, "semgrep")
+		if stat, err := os.Stat(semgrepCache); err == nil {
+			log.Printf("[scanner] Semgrep cache exists: %s (readable: %t)", semgrepCache, stat.IsDir())
+		}
+	}
 
 	// Capture stdout for JSON output
 	stdout, err := cmd.StdoutPipe()
@@ -391,8 +406,16 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 			} else if exitErr.ExitCode() == -1 {
 				// Exit code -1 typically means killed by signal (could be timeout or OOM)
 				return nil, fmt.Errorf("scanner was terminated (exit code -1). This may indicate timeout, out of memory, or a crash. Stderr: %s", stderrStr)
+			} else if exitErr.ExitCode() == 2 {
+				// Exit code 2 indicates configuration/rules error
+				if stderrStr == "" {
+					stderrStr = "No error output captured. Common causes: network failure downloading rules (--config auto), permission issues accessing cache directory, or invalid configuration. Check logs above for cache directory info."
+				}
+				log.Printf("[scanner] Configuration error (exit code 2): %s", stderrStr)
+				return nil, fmt.Errorf("scanner configuration error (exit code 2): %s", stderrStr)
 			} else {
-				// Include stderr in error for debugging
+				// Include stderr and exit code in error for debugging
+				log.Printf("[scanner] Failed with exit code %d: %s", exitErr.ExitCode(), stderrStr)
 				return nil, fmt.Errorf("scanner failed with exit code %d: %s", exitErr.ExitCode(), stderrStr)
 			}
 		}
