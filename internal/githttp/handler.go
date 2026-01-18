@@ -593,17 +593,23 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 			// Sort by severity (Critical -> High -> Medium -> Low, worst first)
 			sortedFindings := SortFindingsBySeverity(findings)
 
-			// Show all findings
+			// Show all findings with improved formatting
 			for i, f := range sortedFindings {
 				severityIcon := getSeverityIcon(sb, f.Severity)
-				// Truncate message if too long
-				msg := f.Message
-				if len(msg) > 50 {
-					msg = msg[:47] + "..."
-				}
-				report.WriteBoxLine(fmt.Sprintf("%s %s", severityIcon, f.RuleID), width)
-				report.WriteBoxLine(fmt.Sprintf("  %s:%d", f.Path, f.StartLine), width)
-				report.WriteBoxLine(fmt.Sprintf("  %s", msg), width)
+				severityLabel := strings.ToUpper(f.Severity)
+				shortRule := shortenRuleID(f.RuleID)
+
+				// Format: ✗ CRITICAL: insecure-document-method
+				report.WriteBoxLine(fmt.Sprintf("%s %s: %s", severityIcon, severityLabel, shortRule), width)
+
+				// Show shortened path with line number
+				pathWithLine := fmt.Sprintf("%s:%d", f.Path, f.StartLine)
+				shortPath := shortenPath(pathWithLine, 60)
+				report.WriteBoxLine(fmt.Sprintf("  %s", shortPath), width)
+
+				// Show message (already truncated by WriteBoxLine if needed)
+				report.WriteBoxLine(fmt.Sprintf("  %s", f.Message), width)
+
 				if i < len(sortedFindings)-1 {
 					report.WriteBoxLine("", width)
 				}
@@ -676,6 +682,47 @@ func SortFindingsBySeverity(findings []scanner.Finding) []scanner.Finding {
 	}
 
 	return sorted
+}
+
+// shortenRuleID extracts the last meaningful segment from a rule ID
+// e.g., "javascript.browser.security.insecure-document-method.insecure-document-method" -> "insecure-document-method"
+func shortenRuleID(ruleID string) string {
+	parts := strings.Split(ruleID, ".")
+	if len(parts) == 0 {
+		return ruleID
+	}
+	// Return the last part, which is usually the most descriptive
+	return parts[len(parts)-1]
+}
+
+// shortenPath intelligently truncates a file path to show filename and line number
+// e.g., "src/main/resources/.../file.js:123" -> "file.js:123" or truncates middle
+func shortenPath(path string, maxLen int) string {
+	if len(path) <= maxLen {
+		return path
+	}
+
+	// Try to preserve filename and line number
+	lastSlash := strings.LastIndex(path, "/")
+	if lastSlash == -1 {
+		// No slashes, just truncate
+		if len(path) > maxLen {
+			return "..." + path[len(path)-maxLen+3:]
+		}
+		return path
+	}
+
+	filename := path[lastSlash+1:]
+	if len(filename) < maxLen-3 {
+		// Filename fits, show it with "..." prefix
+		return "..." + filename
+	}
+
+	// Filename itself is too long, truncate it
+	if len(filename) > maxLen {
+		return filename[:maxLen-3] + "..."
+	}
+	return filename
 }
 
 // writeRateLimitResponse writes a rate limit error via sideband-style output

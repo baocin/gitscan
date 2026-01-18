@@ -9,7 +9,7 @@ import (
 // GenerateScaledQR generates a large, scannable QR code
 // Uses 2 characters per module with full blocks for maximum reliability and 80-char compatibility
 func GenerateScaledQR(url string) []string {
-	qr, err := qrcode.New(url, qrcode.High)
+	qr, err := qrcode.New(url, qrcode.Medium)
 	if err != nil {
 		// Return error message instead of fake QR
 		return []string{
