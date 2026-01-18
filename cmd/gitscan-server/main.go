@@ -42,6 +42,7 @@ func main() {
 		openGrepPath = flag.String("opengrep", "opengrep", "Path to opengrep binary")
 		rulesPath    = flag.String("rules", "", "Path to opengrep rules directory")
 		scanTimeout  = flag.Int("scan-timeout", 180, "Scan timeout in seconds (default: 180s/3min)")
+		resetDB      = flag.Bool("reset-db", true, "Reset database on startup (default: true)")
 		showVersion  = flag.Bool("version", false, "Show version and exit")
 	)
 	flag.Parse()
@@ -60,6 +61,13 @@ func main() {
 	}
 	defer database.Close()
 	log.Printf("Database initialized: %s", *dbPath)
+
+	// Reset database if requested
+	if *resetDB {
+		if err := database.ResetTables(); err != nil {
+			log.Fatalf("Failed to reset database: %v", err)
+		}
+	}
 
 	// Initialize cache
 	cacheCfg := cache.DefaultConfig()

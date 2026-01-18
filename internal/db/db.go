@@ -135,6 +135,53 @@ func (db *DB) Close() error {
 	return db.conn.Close()
 }
 
+// ResetTables clears all data from the database tables
+// This is useful for fresh starts during development or testing
+func (db *DB) ResetTables() error {
+	tables := []string{
+		"scans",
+		"requests",
+		"repos",
+		"banned_ips",
+		"suspicious_requests",
+	}
+
+	var deletedCounts []string
+	for _, table := range tables {
+		// Count rows before deletion
+		var count int
+		err := db.conn.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", table)).Scan(&count)
+		if err != nil {
+			// Table might not exist, skip it
+			continue
+		}
+
+		// Delete all rows
+		_, err = db.conn.Exec(fmt.Sprintf("DELETE FROM %s", table))
+		if err != nil {
+			return fmt.Errorf("failed to clear table %s: %w", table, err)
+		}
+
+		if count > 0 {
+			deletedCounts = append(deletedCounts, fmt.Sprintf("%s: %d", table, count))
+		}
+	}
+
+	// Run VACUUM to reclaim disk space
+	if _, err := db.conn.Exec("VACUUM"); err != nil {
+		// VACUUM can fail, but it's not critical
+		fmt.Printf("Warning: VACUUM failed: %v\n", err)
+	}
+
+	if len(deletedCounts) > 0 {
+		fmt.Printf("Database reset: cleared %s\n", strings.Join(deletedCounts, ", "))
+	} else {
+		fmt.Println("Database reset: no data to clear")
+	}
+
+	return nil
+}
+
 // Repo represents a cached repository
 type Repo struct {
 	ID            int64
