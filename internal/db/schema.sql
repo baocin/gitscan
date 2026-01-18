@@ -73,6 +73,31 @@ CREATE TABLE IF NOT EXISTS banned_ips (
     expires_at DATETIME  -- NULL for permanent ban
 );
 
+-- File-level scan cache for cross-repo deduplication
+CREATE TABLE IF NOT EXISTS file_scans (
+    file_hash TEXT NOT NULL,           -- SHA256 of file content
+    scan_level TEXT NOT NULL,          -- 'quick', 'normal', 'thorough'
+    findings_json TEXT NOT NULL,       -- SARIF findings for this file
+    finding_count INTEGER DEFAULT 0,
+    critical_count INTEGER DEFAULT 0,
+    high_count INTEGER DEFAULT 0,
+    medium_count INTEGER DEFAULT 0,
+    low_count INTEGER DEFAULT 0,
+    scan_duration_ms INTEGER,
+    scanned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (file_hash, scan_level)
+);
+
+-- Link files to scans (track which files were in which repo scans)
+CREATE TABLE IF NOT EXISTS scan_files (
+    scan_id INTEGER NOT NULL REFERENCES scans(id),
+    file_hash TEXT NOT NULL,
+    file_path TEXT NOT NULL,          -- Relative path in repo
+    file_size INTEGER,
+    from_cache BOOLEAN DEFAULT FALSE, -- Was result reused from cache?
+    PRIMARY KEY (scan_id, file_hash, file_path)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_repos_url ON repos(url);
 CREATE INDEX IF NOT EXISTS idx_scans_repo_commit ON scans(repo_id, commit_sha);
@@ -82,3 +107,6 @@ CREATE INDEX IF NOT EXISTS idx_requests_ssh_time ON requests(ssh_key_fingerprint
 CREATE INDEX IF NOT EXISTS idx_requests_repo_time ON requests(repo_url, created_at);
 CREATE INDEX IF NOT EXISTS idx_suspicious_ip_time ON suspicious_requests(ip, created_at);
 CREATE INDEX IF NOT EXISTS idx_banned_ips_expires ON banned_ips(expires_at);
+CREATE INDEX IF NOT EXISTS idx_file_scans_hash_level ON file_scans(file_hash, scan_level);
+CREATE INDEX IF NOT EXISTS idx_scan_files_scan ON scan_files(scan_id);
+CREATE INDEX IF NOT EXISTS idx_scan_files_hash ON scan_files(file_hash);

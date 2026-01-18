@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -55,13 +56,36 @@ func (db *DB) runMigrations() error {
 			return err
 		}
 	}
+
+	// Add scan_level column to scans table
+	_, err = db.conn.Exec(`ALTER TABLE scans ADD COLUMN scan_level TEXT DEFAULT 'normal'`)
+	if err != nil && !isColumnExistsError(err) {
+		return err
+	}
+
+	// Add cached_file_count column to scans table
+	_, err = db.conn.Exec(`ALTER TABLE scans ADD COLUMN cached_file_count INTEGER DEFAULT 0`)
+	if err != nil && !isColumnExistsError(err) {
+		return err
+	}
+
+	// Add scanned_file_count column to scans table
+	_, err = db.conn.Exec(`ALTER TABLE scans ADD COLUMN scanned_file_count INTEGER DEFAULT 0`)
+	if err != nil && !isColumnExistsError(err) {
+		return err
+	}
+
 	return nil
 }
 
 // isColumnExistsError checks if the error is a "column already exists" error
 func isColumnExistsError(err error) bool {
-	return err != nil && (err.Error() == "duplicate column name: license" ||
-		err.Error() == "SQLITE_ERROR: duplicate column name: license")
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "duplicate column name") ||
+		strings.Contains(errStr, "SQLITE_ERROR")
 }
 
 // Close closes the database connection
@@ -85,22 +109,25 @@ type Repo struct {
 
 // Scan represents a scan result
 type Scan struct {
-	ID              int64
-	RepoID          int64
-	CommitSHA       string
-	ResultsJSON     string
-	SummaryJSON     string
-	CriticalCount   int
-	HighCount       int
-	MediumCount     int
-	LowCount        int
-	InfoCount       int
-	SecurityScore   int // 0-100 weighted security score
-	FilesScanned    int
-	ScanDurationMS  int64
-	OpenGrepVersion string
-	RulesVersion    string
-	CreatedAt       time.Time
+	ID               int64
+	RepoID           int64
+	CommitSHA        string
+	ResultsJSON      string
+	SummaryJSON      string
+	CriticalCount    int
+	HighCount        int
+	MediumCount      int
+	LowCount         int
+	InfoCount        int
+	SecurityScore    int // 0-100 weighted security score
+	FilesScanned     int
+	ScanDurationMS   int64
+	OpenGrepVersion  string
+	RulesVersion     string
+	ScanLevel        string // 'quick', 'normal', 'thorough'
+	CachedFileCount  int    // Number of files reused from cache
+	ScannedFileCount int    // Number of files actually scanned
+	CreatedAt        time.Time
 }
 
 // Request represents a request log entry
@@ -192,7 +219,8 @@ func (db *DB) GetScanByRepoAndCommit(repoID int64, commitSHA string) (*Scan, err
 		SELECT id, repo_id, commit_sha, results_json, summary_json,
 		       critical_count, high_count, medium_count, low_count, info_count,
 		       COALESCE(security_score, 100), files_scanned, scan_duration_ms,
-		       opengrep_version, rules_version, created_at
+		       opengrep_version, rules_version, created_at,
+		       COALESCE(scan_level, 'normal'), COALESCE(cached_file_count, 0), COALESCE(scanned_file_count, 0)
 		FROM scans WHERE repo_id = ? AND commit_sha = ?
 	`, repoID, commitSHA)
 
@@ -203,7 +231,8 @@ func (db *DB) GetScanByRepoAndCommit(repoID int64, commitSHA string) (*Scan, err
 
 	err := row.Scan(&s.ID, &s.RepoID, &s.CommitSHA, &s.ResultsJSON, &summaryJSON,
 		&s.CriticalCount, &s.HighCount, &s.MediumCount, &s.LowCount, &s.InfoCount,
-		&s.SecurityScore, &filesScanned, &s.ScanDurationMS, &openGrepVer, &rulesVer, &s.CreatedAt)
+		&s.SecurityScore, &filesScanned, &s.ScanDurationMS, &openGrepVer, &rulesVer, &s.CreatedAt,
+		&s.ScanLevel, &s.CachedFileCount, &s.ScannedFileCount)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -224,11 +253,13 @@ func (db *DB) CreateScan(scan *Scan) error {
 	result, err := db.conn.Exec(`
 		INSERT INTO scans (repo_id, commit_sha, results_json, summary_json,
 		                   critical_count, high_count, medium_count, low_count, info_count,
-		                   security_score, files_scanned, scan_duration_ms, opengrep_version, rules_version)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                   security_score, files_scanned, scan_duration_ms, opengrep_version, rules_version,
+		                   scan_level, cached_file_count, scanned_file_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, scan.RepoID, scan.CommitSHA, scan.ResultsJSON, scan.SummaryJSON,
 		scan.CriticalCount, scan.HighCount, scan.MediumCount, scan.LowCount, scan.InfoCount,
-		scan.SecurityScore, scan.FilesScanned, scan.ScanDurationMS, scan.OpenGrepVersion, scan.RulesVersion)
+		scan.SecurityScore, scan.FilesScanned, scan.ScanDurationMS, scan.OpenGrepVersion, scan.RulesVersion,
+		scan.ScanLevel, scan.CachedFileCount, scan.ScannedFileCount)
 	if err != nil {
 		return err
 	}
@@ -397,4 +428,143 @@ func (db *DB) IsIPBanned(ip string) (bool, string, error) {
 	}
 
 	return true, reason, nil
+}
+
+// FileScan represents a cached scan result for a single file
+type FileScan struct {
+	FileHash       string
+	ScanLevel      string
+	FindingsJSON   string
+	FindingCount   int
+	CriticalCount  int
+	HighCount      int
+	MediumCount    int
+	LowCount       int
+	ScanDurationMS int64
+	ScannedAt      time.Time
+}
+
+// ScanFile represents a file that was part of a scan
+type ScanFile struct {
+	ScanID    int64
+	FileHash  string
+	FilePath  string
+	FileSize  int64
+	FromCache bool
+}
+
+// GetFileScan retrieves a cached file scan result
+func (db *DB) GetFileScan(fileHash, scanLevel string) (*FileScan, error) {
+	row := db.conn.QueryRow(`
+		SELECT file_hash, scan_level, findings_json, finding_count,
+		       critical_count, high_count, medium_count, low_count,
+		       scan_duration_ms, scanned_at
+		FROM file_scans
+		WHERE file_hash = ? AND scan_level = ?
+	`, fileHash, scanLevel)
+
+	var fs FileScan
+	err := row.Scan(&fs.FileHash, &fs.ScanLevel, &fs.FindingsJSON, &fs.FindingCount,
+		&fs.CriticalCount, &fs.HighCount, &fs.MediumCount, &fs.LowCount,
+		&fs.ScanDurationMS, &fs.ScannedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &fs, nil
+}
+
+// SaveFileScan saves a file scan result to the cache
+func (db *DB) SaveFileScan(fs *FileScan) error {
+	_, err := db.conn.Exec(`
+		INSERT OR REPLACE INTO file_scans
+		(file_hash, scan_level, findings_json, finding_count,
+		 critical_count, high_count, medium_count, low_count,
+		 scan_duration_ms, scanned_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, fs.FileHash, fs.ScanLevel, fs.FindingsJSON, fs.FindingCount,
+		fs.CriticalCount, fs.HighCount, fs.MediumCount, fs.LowCount,
+		fs.ScanDurationMS, time.Now())
+
+	return err
+}
+
+// GetCachedFileHashes performs a batch lookup of file hashes at a specific scan level
+// Returns a map of file_hash -> FileScan for all found hashes
+func (db *DB) GetCachedFileHashes(fileHashes []string, scanLevel string) (map[string]*FileScan, error) {
+	if len(fileHashes) == 0 {
+		return make(map[string]*FileScan), nil
+	}
+
+	// Build placeholders for SQL IN clause
+	placeholders := make([]string, len(fileHashes))
+	args := make([]interface{}, len(fileHashes)+1)
+	args[0] = scanLevel
+	for i, hash := range fileHashes {
+		placeholders[i] = "?"
+		args[i+1] = hash
+	}
+
+	query := fmt.Sprintf(`
+		SELECT file_hash, scan_level, findings_json, finding_count,
+		       critical_count, high_count, medium_count, low_count,
+		       scan_duration_ms, scanned_at
+		FROM file_scans
+		WHERE scan_level = ? AND file_hash IN (%s)
+	`, strings.Join(placeholders, ","))
+
+	rows, err := db.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make(map[string]*FileScan)
+	for rows.Next() {
+		var fs FileScan
+		err := rows.Scan(&fs.FileHash, &fs.ScanLevel, &fs.FindingsJSON, &fs.FindingCount,
+			&fs.CriticalCount, &fs.HighCount, &fs.MediumCount, &fs.LowCount,
+			&fs.ScanDurationMS, &fs.ScannedAt)
+		if err != nil {
+			return nil, err
+		}
+		results[fs.FileHash] = &fs
+	}
+
+	return results, rows.Err()
+}
+
+// LinkFilesToScan records which files were part of a scan
+func (db *DB) LinkFilesToScan(scanID int64, files []ScanFile) error {
+	if len(files) == 0 {
+		return nil
+	}
+
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`
+		INSERT INTO scan_files (scan_id, file_hash, file_path, file_size, from_cache)
+		VALUES (?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, file := range files {
+		_, err = stmt.Exec(scanID, file.FileHash, file.FilePath, file.FileSize, file.FromCache)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }

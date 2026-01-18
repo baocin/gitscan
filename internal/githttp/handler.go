@@ -405,17 +405,20 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 
 	// Step 4: Save scan results
 	dbScan := &db.Scan{
-		RepoID:         repo.ID,
-		CommitSHA:      repo.LastCommitSHA,
-		ResultsJSON:    scanResult.FindingsJSON,
-		CriticalCount:  scanResult.CriticalCount,
-		HighCount:      scanResult.HighCount,
-		MediumCount:    scanResult.MediumCount,
-		LowCount:       scanResult.LowCount,
-		InfoCount:      scanResult.InfoCount,
-		SecurityScore:  scanResult.SecurityScore,
-		FilesScanned:   scanResult.FilesScanned,
-		ScanDurationMS: scanResult.Duration.Milliseconds(),
+		RepoID:           repo.ID,
+		CommitSHA:        repo.LastCommitSHA,
+		ResultsJSON:      scanResult.FindingsJSON,
+		CriticalCount:    scanResult.CriticalCount,
+		HighCount:        scanResult.HighCount,
+		MediumCount:      scanResult.MediumCount,
+		LowCount:         scanResult.LowCount,
+		InfoCount:        scanResult.InfoCount,
+		SecurityScore:    scanResult.SecurityScore,
+		FilesScanned:     scanResult.FilesScanned,
+		ScanDurationMS:   scanResult.Duration.Milliseconds(),
+		ScanLevel:        string(scanResult.ScanLevel),
+		CachedFileCount:  scanResult.CachedFileCount,
+		ScannedFileCount: scanResult.ScannedFileCount,
 	}
 	h.db.CreateScan(dbScan)
 

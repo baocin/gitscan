@@ -18,13 +18,24 @@ type Scanner struct {
 	binaryPath string
 	rulesPath  string
 	timeout    time.Duration
+	scanLevel  ScanLevel
 }
+
+// ScanLevel defines the depth/thoroughness of scanning
+type ScanLevel string
+
+const (
+	ScanLevelQuick     ScanLevel = "quick"     // Fast scan, critical issues only
+	ScanLevelNormal    ScanLevel = "normal"    // Standard scan, all severities
+	ScanLevelThorough  ScanLevel = "thorough"  // Deep scan, maximum analysis
+)
 
 // Config holds scanner configuration
 type Config struct {
 	BinaryPath string
 	RulesPath  string
 	Timeout    time.Duration
+	ScanLevel  ScanLevel
 }
 
 // DefaultConfig returns default scanner configuration
@@ -33,6 +44,7 @@ func DefaultConfig() Config {
 		BinaryPath: "opengrep", // Assumes opengrep is in PATH
 		RulesPath:  "",         // Use default rules
 		Timeout:    60 * time.Second,
+		ScanLevel:  ScanLevelNormal,
 	}
 }
 
@@ -41,10 +53,14 @@ func New(cfg Config) *Scanner {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 60 * time.Second
 	}
+	if cfg.ScanLevel == "" {
+		cfg.ScanLevel = ScanLevelNormal
+	}
 	return &Scanner{
 		binaryPath: cfg.BinaryPath,
 		rulesPath:  cfg.RulesPath,
 		timeout:    cfg.Timeout,
+		scanLevel:  cfg.ScanLevel,
 	}
 }
 
@@ -74,17 +90,20 @@ type ProgressFunc func(Progress)
 
 // Result represents scan results
 type Result struct {
-	Findings      []Finding
-	CriticalCount int
-	HighCount     int
-	MediumCount   int
-	LowCount      int
-	InfoCount     int
-	FilesScanned  int
-	Duration      time.Duration
-	FindingsJSON  string // JSON array of Finding structs (not raw SARIF)
-	ScannerUsed   string // "opengrep", "semgrep", or "mock"
-	SecurityScore int    // 0-100 score based on severity-weighted findings
+	Findings         []Finding
+	CriticalCount    int
+	HighCount        int
+	MediumCount      int
+	LowCount         int
+	InfoCount        int
+	FilesScanned     int
+	Duration         time.Duration
+	FindingsJSON     string    // JSON array of Finding structs (not raw SARIF)
+	ScannerUsed      string    // "opengrep", "semgrep", or "mock"
+	SecurityScore    int       // 0-100 score based on severity-weighted findings
+	ScanLevel        ScanLevel // Scan level used
+	CachedFileCount  int       // Number of files reused from cache
+	ScannedFileCount int       // Number of files actually scanned
 }
 
 // SecurityScoreWeights defines point deductions per severity level
@@ -194,6 +213,56 @@ type SARIFOutput struct {
 	} `json:"runs"`
 }
 
+// buildScanArgs builds opengrep arguments based on scan level
+func (s *Scanner) buildScanArgs(repoPath string) []string {
+	args := []string{
+		"scan",
+		"--quiet",
+		"--sarif",
+	}
+
+	// Add level-specific performance flags
+	switch s.scanLevel {
+	case ScanLevelQuick:
+		// Fast scan: critical only, aggressive timeouts, smaller files, more parallelism
+		args = append(args, "--severity", "ERROR")
+		args = append(args, "--timeout", "2")
+		args = append(args, "--max-target-bytes", "500000") // 500KB max
+		args = append(args, "--jobs", "16")
+		args = append(args, "--timeout-threshold", "1") // Skip file after 1 timeout
+
+	case ScanLevelThorough:
+		// Deep scan: all severities, longer timeouts, larger files, less parallelism
+		args = append(args, "--timeout", "30")
+		args = append(args, "--max-target-bytes", "5000000") // 5MB max
+		args = append(args, "--jobs", "8")
+		args = append(args, "--timeout-threshold", "5")
+
+	default: // ScanLevelNormal
+		// Balanced scan: all severities, standard timeouts
+		args = append(args, "--timeout", "5")
+		args = append(args, "--max-target-bytes", "1000000") // 1MB max
+		args = append(args, "--jobs", "12")
+		args = append(args, "--timeout-threshold", "3")
+	}
+
+	// Add config
+	if s.rulesPath != "" {
+		args = append(args, "--config", s.rulesPath)
+	} else {
+		args = append(args, "--config", "auto")
+	}
+
+	// Exclude common bloat
+	args = append(args, "--exclude", "node_modules")
+	args = append(args, "--exclude", "vendor")
+	args = append(args, "--exclude", "*.min.js")
+	args = append(args, "--exclude", "*.bundle.js")
+
+	args = append(args, repoPath)
+	return args
+}
+
 // Scan performs a security scan on the given path
 func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn ProgressFunc) (*Result, error) {
 	startTime := time.Now()
@@ -204,32 +273,24 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 		totalFiles = 0 // Continue even if we can't count
 	}
 
-	// Build opengrep command - requires "scan" subcommand
-	// Use --sarif for SARIF output format (not --json which is semgrep native format)
-	// Use --quiet to suppress progress bar that can interfere with stdout parsing
-	args := []string{
-		"scan",
-		"--quiet",
-		"--sarif",
+	// Build opengrep command args based on scan level
+	args := s.buildScanArgs(repoPath)
+
+	// Create context with timeout (adjust based on scan level)
+	timeout := s.timeout
+	switch s.scanLevel {
+	case ScanLevelQuick:
+		timeout = 30 * time.Second
+	case ScanLevelThorough:
+		timeout = 120 * time.Second
 	}
-
-	if s.rulesPath != "" {
-		args = append(args, "--config", s.rulesPath)
-	} else {
-		// Use auto config to detect language and apply relevant rules
-		args = append(args, "--config", "auto")
-	}
-
-	args = append(args, repoPath)
-
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, s.binaryPath, args...)
 	// Set QT_QPA_PLATFORM=offscreen to prevent Qt display errors on headless servers
 	cmd.Env = append(os.Environ(), "QT_QPA_PLATFORM=offscreen")
-	log.Printf("[scanner] Running: %s %s", s.binaryPath, strings.Join(args, " "))
+	log.Printf("[scanner] Running (%s): %s %s", s.scanLevel, s.binaryPath, strings.Join(args, " "))
 
 	// Capture stdout for JSON output
 	stdout, err := cmd.StdoutPipe()
@@ -343,8 +404,9 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	}
 
 	result.ScannerUsed = s.binaryPath
-	log.Printf("[scanner] Completed: %d findings (%d critical, %d high, %d medium, %d low) in %v",
-		len(result.Findings), result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount, result.Duration)
+	result.ScanLevel = s.scanLevel
+	log.Printf("[scanner] Completed (%s): %d findings (%d critical, %d high, %d medium, %d low) in %v",
+		s.scanLevel, len(result.Findings), result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount, result.Duration)
 	return result, nil
 }
 
