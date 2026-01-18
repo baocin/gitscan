@@ -79,24 +79,34 @@ jobs:
           # Clone this repo (contains test/fixtures/fake_secrets.go)
           git clone --depth 1 https://github.com/baocin/gitscan.git /tmp/test-repo
 
-          # Run scanner and capture output
+          # Run scanner - JSON goes to file, progress/status to stderr (separate)
+          # Note: stderr contains visual progress output, stdout contains JSON
           echo "Running opengrep scanner..."
-          opengrep scan --config auto --sarif /tmp/test-repo > /tmp/scan-results.json 2>&1 || true
+          opengrep --config auto --json --metrics=off /tmp/test-repo > /tmp/scan-results.json 2>/tmp/scan-stderr.log || true
 
-          # Show results
-          echo "=== Scan Results ==="
+          # Show scanner progress (from stderr)
+          echo "=== Scanner Progress ==="
+          cat /tmp/scan-stderr.log | head -50
+
+          # Show JSON results
+          echo "=== Scan Results (JSON) ==="
           cat /tmp/scan-results.json | head -200
 
           # Verify we got JSON output
           if [ ! -s /tmp/scan-results.json ]; then
             echo "ERROR: No scan output generated"
+            echo "=== Stderr log ==="
+            cat /tmp/scan-stderr.log
             exit 1
           fi
 
           # Check for valid JSON structure
           if ! python3 -c "import json; json.load(open('/tmp/scan-results.json'))"; then
             echo "ERROR: Invalid JSON output"
+            echo "=== Full output ==="
             cat /tmp/scan-results.json
+            echo "=== Stderr log ==="
+            cat /tmp/scan-stderr.log
             exit 1
           fi
           echo "Scanner produced valid JSON output"
