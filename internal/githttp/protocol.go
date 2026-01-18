@@ -150,6 +150,13 @@ func ParseRepoPathFull(urlPath string) (*ParsedPath, error) {
 	path = strings.TrimSuffix(path, "/git-receive-pack")
 	path = strings.TrimSuffix(path, ".git")
 
+	// Strip common URL prefixes that users might accidentally include
+	// e.g., "https://github.com/owner/repo" or "http://github.com/owner/repo"
+	path = strings.TrimPrefix(path, "https:/")
+	path = strings.TrimPrefix(path, "http:/")
+	// After stripping "https:/", path might start with "/" so trim it
+	path = strings.TrimPrefix(path, "/")
+
 	parts := strings.Split(path, "/")
 
 	// Check for mode prefix
@@ -185,9 +192,16 @@ func ParseRepoPathFull(urlPath string) (*ParsedPath, error) {
 	parsed.Owner = remaining[1]
 	parsed.Repo = remaining[2]
 
-	// Validate: Owner should not be a git host (indicates malformed URL like /github.com/github.com/owner/repo)
+	// Check if the Owner accidentally contains a git host (duplicate URL issue)
+	// e.g., user provided "github.com/github.com/owner/repo" instead of "github.com/owner/repo"
 	if supportedHosts[parsed.Owner] {
-		return nil, fmt.Errorf("invalid URL path: found '%s' where owner was expected. Use format: %s/owner/repo", parsed.Owner, parsed.Host)
+		// Shift: treat remaining[1] as the real host, remaining[2] as owner, remaining[3] as repo
+		if len(remaining) < 4 {
+			return nil, fmt.Errorf("invalid path: duplicate host detected. Use format: github.com/owner/repo (not github.com/github.com/owner/repo)")
+		}
+		parsed.Host = remaining[1]
+		parsed.Owner = remaining[2]
+		parsed.Repo = remaining[3]
 	}
 
 	parsed.RepoPath = parsed.Owner + "/" + parsed.Repo
