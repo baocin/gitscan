@@ -126,6 +126,22 @@ func (h *Handler) handleInfoRefs(ctx context.Context, w http.ResponseWriter, r *
 	service := r.URL.Query().Get("service")
 	if service != "git-upload-pack" {
 		http.Error(w, "Only git-upload-pack is supported", http.StatusForbidden)
+
+		// Log failed request
+		h.db.LogRequest(&db.Request{
+			IP:             clientIP,
+			UserAgent:      r.Header.Get("User-Agent"),
+			Referer:        r.Header.Get("Referer"),
+			GitVersion:     parseGitVersion(r.Header.Get("User-Agent")),
+			RepoURL:        parsed.FullPath,
+			RequestMode:    parsed.Mode,
+			RequestType:    "info_refs",
+			HTTPMethod:     r.Method,
+			Success:        false,
+			ResponseTimeMS: time.Since(startTime).Milliseconds(),
+			QueryParams:    serializeQueryParams(r),
+			Error:          "Only git-upload-pack is supported",
+		})
 		return
 	}
 
@@ -149,6 +165,22 @@ func (h *Handler) handleInfoRefs(ctx context.Context, w http.ResponseWriter, r *
 	pkt.WriteString(fmt.Sprintf("%s HEAD\x00%s\n", fakeOID, caps))
 	pkt.WriteString(fmt.Sprintf("%s refs/heads/main\n", fakeOID))
 	pkt.WriteFlush()
+
+	// Log info/refs request
+	responseTime := time.Since(startTime)
+	h.db.LogRequest(&db.Request{
+		IP:             clientIP,
+		UserAgent:      r.Header.Get("User-Agent"),
+		Referer:        r.Header.Get("Referer"),
+		GitVersion:     parseGitVersion(r.Header.Get("User-Agent")),
+		RepoURL:        parsed.FullPath,
+		RequestMode:    parsed.Mode,
+		RequestType:    "info_refs",
+		HTTPMethod:     r.Method,
+		Success:        true,
+		ResponseTimeMS: responseTime.Milliseconds(),
+		QueryParams:    serializeQueryParams(r),
+	})
 }
 
 // handleUploadPack handles the pack negotiation and is where we inject our scan results
@@ -188,7 +220,7 @@ func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r
 	}
 
 	// Start the scan process
-	h.performScan(ctx, sb, parsed, clientIP, startTime, isPrivate, skipCache)
+	h.performScan(ctx, sb, r, parsed, clientIP, startTime, isPrivate, skipCache)
 
 	// Send empty packfile and flush to properly terminate git protocol
 	sb.WriteEmptyPackfile()
@@ -253,7 +285,7 @@ func checkClientDisconnected(ctx context.Context) bool {
 }
 
 // performScan fetches the repo, scans it, and writes results via sideband
-func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *ParsedPath, clientIP string, startTime time.Time, isPrivate bool, skipCache bool) {
+func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.Request, parsed *ParsedPath, clientIP string, startTime time.Time, isPrivate bool, skipCache bool) {
 	report := NewReportWriter(sb)
 	boxWidth := 80
 
@@ -349,6 +381,26 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 			}
 			sb.WriteProgressf("%s [git.vet] Using cached scan results", IconSuccess)
 			h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true)
+
+			// Log cache hit request
+			responseTime := time.Since(startTime)
+			userAgent := r.Header.Get("User-Agent")
+			h.db.LogRequest(&db.Request{
+				IP:             clientIP,
+				UserAgent:      userAgent,
+				Referer:        r.Header.Get("Referer"),
+				GitVersion:     parseGitVersion(userAgent),
+				RepoURL:        parsed.FullPath,
+				CommitSHA:      repo.LastCommitSHA,
+				RequestMode:    parsed.Mode,
+				RequestType:    "upload_pack",
+				HTTPMethod:     r.Method,
+				ScanID:         &cachedScan.ID,
+				CacheHit:       true,
+				Success:        true,
+				ResponseTimeMS: responseTime.Milliseconds(),
+				QueryParams:    serializeQueryParams(r),
+			})
 			return
 		}
 		// Cache miss - record it
@@ -427,14 +479,22 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 
 	// Log request
 	responseTime := time.Since(startTime)
+	userAgent := r.Header.Get("User-Agent")
 	h.db.LogRequest(&db.Request{
 		IP:             clientIP,
+		UserAgent:      userAgent,
+		Referer:        r.Header.Get("Referer"),
+		GitVersion:     parseGitVersion(userAgent),
 		RepoURL:        parsed.FullPath,
 		CommitSHA:      repo.LastCommitSHA,
 		RequestMode:    parsed.Mode,
+		RequestType:    "upload_pack",
+		HTTPMethod:     r.Method,
 		ScanID:         &dbScan.ID,
 		CacheHit:       false,
+		Success:        true,
 		ResponseTimeMS: responseTime.Milliseconds(),
+		QueryParams:    serializeQueryParams(r),
 	})
 }
 
@@ -747,4 +807,61 @@ func truncate(s string, length int) string {
 		return s
 	}
 	return s[:length]
+}
+
+// parseGitVersion extracts git version from User-Agent header
+// Examples:
+//   "git/2.39.0" -> "2.39.0"
+//   "git/2.39.0 (Apple Git-152)" -> "2.39.0"
+//   "libgit2/1.5.0" -> "1.5.0"
+//   "go-git/v5.4.2" -> "5.4.2"
+func parseGitVersion(userAgent string) string {
+	if userAgent == "" {
+		return ""
+	}
+
+	// Try to match common patterns
+	patterns := []string{
+		"git/",
+		"libgit2/",
+		"go-git/v",
+		"jgit/",
+	}
+
+	for _, pattern := range patterns {
+		if idx := strings.Index(userAgent, pattern); idx >= 0 {
+			start := idx + len(pattern)
+			version := userAgent[start:]
+
+			// Extract until space or end
+			if spaceIdx := strings.Index(version, " "); spaceIdx > 0 {
+				version = version[:spaceIdx]
+			}
+
+			return version
+		}
+	}
+
+	return ""
+}
+
+// serializeQueryParams converts URL query parameters to JSON string
+func serializeQueryParams(r *http.Request) string {
+	if len(r.URL.Query()) == 0 {
+		return ""
+	}
+
+	params := make(map[string]string)
+	for key, values := range r.URL.Query() {
+		if len(values) > 0 {
+			params[key] = values[0] // Take first value
+		}
+	}
+
+	jsonBytes, err := json.Marshal(params)
+	if err != nil {
+		return ""
+	}
+
+	return string(jsonBytes)
 }

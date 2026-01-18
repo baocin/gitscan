@@ -75,6 +75,37 @@ func (db *DB) runMigrations() error {
 		return err
 	}
 
+	// Add comprehensive request logging columns
+	_, err = db.conn.Exec(`ALTER TABLE requests ADD COLUMN referer TEXT`)
+	if err != nil && !isColumnExistsError(err) {
+		return err
+	}
+
+	_, err = db.conn.Exec(`ALTER TABLE requests ADD COLUMN git_version TEXT`)
+	if err != nil && !isColumnExistsError(err) {
+		return err
+	}
+
+	_, err = db.conn.Exec(`ALTER TABLE requests ADD COLUMN request_type TEXT`)
+	if err != nil && !isColumnExistsError(err) {
+		return err
+	}
+
+	_, err = db.conn.Exec(`ALTER TABLE requests ADD COLUMN http_method TEXT`)
+	if err != nil && !isColumnExistsError(err) {
+		return err
+	}
+
+	_, err = db.conn.Exec(`ALTER TABLE requests ADD COLUMN success BOOLEAN DEFAULT TRUE`)
+	if err != nil && !isColumnExistsError(err) {
+		return err
+	}
+
+	_, err = db.conn.Exec(`ALTER TABLE requests ADD COLUMN query_params TEXT`)
+	if err != nil && !isColumnExistsError(err) {
+		return err
+	}
+
 	return nil
 }
 
@@ -132,18 +163,24 @@ type Scan struct {
 
 // Request represents a request log entry
 type Request struct {
-	ID                 int64
-	IP                 string
-	SSHKeyFingerprint  string
-	UserAgent          string
-	RepoURL            string
-	CommitSHA          string
-	RequestMode        string
-	ScanID             *int64
-	CacheHit           bool
-	ResponseTimeMS     int64
-	Error              string
-	CreatedAt          time.Time
+	ID                int64
+	IP                string
+	SSHKeyFingerprint string
+	UserAgent         string
+	Referer           string
+	GitVersion        string
+	RepoURL           string
+	CommitSHA         string
+	RequestMode       string
+	RequestType       string // 'info_refs', 'upload_pack'
+	HTTPMethod        string // 'GET', 'POST'
+	ScanID            *int64
+	CacheHit          bool
+	Success           bool
+	ResponseTimeMS    int64
+	QueryParams       string // JSON
+	Error             string
+	CreatedAt         time.Time
 }
 
 // GetRepoByURL retrieves a repo by its URL
@@ -272,12 +309,14 @@ func (db *DB) CreateScan(scan *Scan) error {
 // LogRequest logs a request for analytics and rate limiting
 func (db *DB) LogRequest(req *Request) error {
 	result, err := db.conn.Exec(`
-		INSERT INTO requests (ip, ssh_key_fingerprint, user_agent, repo_url, commit_sha,
-		                      request_mode, scan_id, cache_hit, response_time_ms, error)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, req.IP, nullString(req.SSHKeyFingerprint), nullString(req.UserAgent),
-		req.RepoURL, nullString(req.CommitSHA), nullString(req.RequestMode),
-		req.ScanID, req.CacheHit, req.ResponseTimeMS, nullString(req.Error))
+		INSERT INTO requests (ip, ssh_key_fingerprint, user_agent, referer, git_version,
+		                      repo_url, commit_sha, request_mode, request_type, http_method,
+		                      scan_id, cache_hit, success, response_time_ms, query_params, error)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, req.IP, nullString(req.SSHKeyFingerprint), nullString(req.UserAgent), nullString(req.Referer),
+		nullString(req.GitVersion), req.RepoURL, nullString(req.CommitSHA), nullString(req.RequestMode),
+		nullString(req.RequestType), nullString(req.HTTPMethod), req.ScanID, req.CacheHit, req.Success,
+		req.ResponseTimeMS, nullString(req.QueryParams), nullString(req.Error))
 	if err != nil {
 		return err
 	}

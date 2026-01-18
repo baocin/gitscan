@@ -45,14 +45,20 @@ CREATE TABLE IF NOT EXISTS scans (
 CREATE TABLE IF NOT EXISTS requests (
     id INTEGER PRIMARY KEY,
     ip TEXT NOT NULL,
-    ssh_key_fingerprint TEXT,              -- Available for SSH connections
+    ssh_key_fingerprint TEXT,              -- Available for SSH connections (future)
     user_agent TEXT,
+    referer TEXT,
+    git_version TEXT,                      -- Extracted from User-Agent
     repo_url TEXT NOT NULL,
     commit_sha TEXT,
     request_mode TEXT,                     -- 'scan', 'clone', 'json', 'plain'
+    request_type TEXT,                     -- 'info_refs', 'upload_pack'
+    http_method TEXT,                      -- 'GET', 'POST'
     scan_id INTEGER REFERENCES scans(id),  -- NULL if rate limited or error
     cache_hit BOOLEAN DEFAULT FALSE,
+    success BOOLEAN DEFAULT TRUE,
     response_time_ms INTEGER,
+    query_params TEXT,                     -- JSON of query parameters
     error TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
