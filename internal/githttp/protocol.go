@@ -184,6 +184,12 @@ func ParseRepoPathFull(urlPath string) (*ParsedPath, error) {
 
 	parsed.Owner = remaining[1]
 	parsed.Repo = remaining[2]
+
+	// Validate: Owner should not be a git host (indicates malformed URL like /github.com/github.com/owner/repo)
+	if supportedHosts[parsed.Owner] {
+		return nil, fmt.Errorf("invalid URL path: found '%s' where owner was expected. Use format: %s/owner/repo", parsed.Owner, parsed.Host)
+	}
+
 	parsed.RepoPath = parsed.Owner + "/" + parsed.Repo
 	parsed.FullPath = parsed.Host + "/" + parsed.Owner + "/" + parsed.Repo
 
