@@ -157,10 +157,14 @@ fi
 
 # Clear cache and reset database if needed
 log_info "Resetting cache..."
-# Look for reset_cache.sh in the installed scripts directory first, then fall back to same directory
+# Look for reset_cache.sh: installed location, temp directory, or script directory
 RESET_CACHE_SCRIPT=""
 if [ -f "/opt/gitvet/scripts/reset_cache.sh" ]; then
     RESET_CACHE_SCRIPT="/opt/gitvet/scripts/reset_cache.sh"
+elif [ -f "$TEMP_DIR/deploy/reset_cache.sh" ]; then
+    RESET_CACHE_SCRIPT="$TEMP_DIR/deploy/reset_cache.sh"
+elif [ -f "./deploy/reset_cache.sh" ]; then
+    RESET_CACHE_SCRIPT="./deploy/reset_cache.sh"
 elif [ -f "$(dirname "${BASH_SOURCE[0]}")/reset_cache.sh" ]; then
     RESET_CACHE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/reset_cache.sh"
 fi
