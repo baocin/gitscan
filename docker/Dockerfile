@@ -2,8 +2,7 @@
 #
 # Build stages:
 # 1. builder - Compiles Go binary, runs unit tests
-# 2. opengrep-cache - Caches opengrep binary and rules
-# 3. production - Minimal production image
+# 2. production - Minimal production image with opengrep
 #
 # Test stages (used by docker-compose.test.yml):
 # 4. test-base - Base for git version tests
@@ -44,7 +43,7 @@ RUN go test -v ./... || echo "Tests completed (some may have failed due to missi
 # ============================================================================
 # Stage 2: Production image
 # ============================================================================
-FROM python:3.11-alpine AS production
+FROM alpine:3.19 AS production
 
 # Install runtime dependencies
 RUN apk add --no-cache \
@@ -52,16 +51,15 @@ RUN apk add --no-cache \
     ca-certificates \
     sqlite-libs \
     tzdata \
-    gcc \
-    musl-dev \
-    libffi-dev
+    curl
 
-# Install opengrep via pip with pinned version for consistent SARIF output
+# Install opengrep binary from GitHub releases
 # IMPORTANT: When updating this version, also update:
 # - internal/version/version.go
 # - .github/workflows/test.yml
-ARG OPENGREP_VERSION=1.99.0
-RUN pip install --no-cache-dir "opengrep==${OPENGREP_VERSION}" && \
+ARG OPENGREP_VERSION=1.15.1
+RUN curl -sL "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_musllinux_x86" -o /usr/local/bin/opengrep && \
+    chmod +x /usr/local/bin/opengrep && \
     echo "=== Checking installed scanner ===" && \
     opengrep --version
 

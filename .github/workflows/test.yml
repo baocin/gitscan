@@ -11,7 +11,7 @@ on:
 # - internal/version/version.go
 # - docker/Dockerfile
 env:
-  OPENGREP_VERSION: "1.99.0"
+  OPENGREP_VERSION: "1.15.1"
 
 jobs:
   test:
@@ -24,14 +24,10 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Install opengrep (pinned version)
         run: |
-          pip install "opengrep==${OPENGREP_VERSION}"
+          curl -sL "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86" -o /usr/local/bin/opengrep
+          chmod +x /usr/local/bin/opengrep
           opengrep --version
 
       - name: Build
@@ -62,14 +58,10 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Install opengrep (pinned version)
         run: |
-          pip install "opengrep==${OPENGREP_VERSION}"
+          curl -sL "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86" -o /usr/local/bin/opengrep
+          chmod +x /usr/local/bin/opengrep
           opengrep --version
 
       - name: Clone test repo and scan for fake secrets
@@ -114,14 +106,10 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Install opengrep (pinned version)
         run: |
-          pip install "opengrep==${OPENGREP_VERSION}"
+          curl -sL "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86" -o /usr/local/bin/opengrep
+          chmod +x /usr/local/bin/opengrep
           opengrep --version
 
       - name: Run OWASP NodeGoat clone test
@@ -151,14 +139,10 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Install opengrep (pinned version)
         run: |
-          pip install "opengrep==${OPENGREP_VERSION}"
+          curl -sL "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86" -o /usr/local/bin/opengrep
+          chmod +x /usr/local/bin/opengrep
           opengrep --version
 
       - name: Build server

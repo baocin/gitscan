@@ -205,7 +205,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	}
 
 	// Build opengrep command - requires "scan" subcommand
-	// Use --sarif for SARIF output format (not --json which is semgrep native format)
+	// Use --sarif for SARIF output format (not --json which is opengrep native format)
 	args := []string{
 		"scan",
 		"--sarif",
@@ -244,7 +244,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	if err := cmd.Start(); err != nil {
 		// If opengrep is not installed, return an error - don't silently mock
 		if strings.Contains(err.Error(), "executable file not found") {
-			return nil, fmt.Errorf("opengrep/semgrep not found: %s is not installed or not in PATH", s.binaryPath)
+			return nil, fmt.Errorf("opengrep not found: %s is not installed or not in PATH", s.binaryPath)
 		}
 		return nil, fmt.Errorf("failed to start scanner: %w", err)
 	}
