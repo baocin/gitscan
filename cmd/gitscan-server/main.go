@@ -187,10 +187,10 @@ func main() {
 		http.NotFound(w, r)
 	})
 
-	// Create HTTP server
+	// Create HTTP server with security middleware
 	httpServer := &http.Server{
 		Addr:         *listenAddr,
-		Handler:      logRequest(mux),
+		Handler:      logRequest(blockSuspiciousPaths(mux)),
 		ReadTimeout:  5 * time.Minute,
 		WriteTimeout: 5 * time.Minute,
 		IdleTimeout:  60 * time.Second,
@@ -212,7 +212,7 @@ func main() {
 	if *tlsCert != "" && *tlsKey != "" {
 		httpsServer = &http.Server{
 			Addr:         *tlsAddr,
-			Handler:      logRequest(mux),
+			Handler:      logRequest(blockSuspiciousPaths(mux)),
 			ReadTimeout:  5 * time.Minute,
 			WriteTimeout: 5 * time.Minute,
 			IdleTimeout:  60 * time.Second,
@@ -250,6 +250,53 @@ func main() {
 	}
 
 	log.Println("Server stopped")
+}
+
+// blockSuspiciousPaths is a middleware that blocks common hacking/scanning attempts
+func blockSuspiciousPaths(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		// Common attack patterns to block
+		suspiciousPatterns := []string{
+			"/.env",
+			"/config.php",
+			"/config.js",
+			"/aws-config",
+			"/aws.config",
+			"/.git/",
+			"/admin/.env",
+			"/backend/.env",
+			"/api/.env",
+			"/.env.bak",
+			"/.env.save",
+			"/.env.local",
+			"/.env.production",
+			"/wp-admin",
+			"/phpMyAdmin",
+			"/phpmyadmin",
+			"/mysql",
+			"/.aws/",
+			"/credentials",
+			"/.ssh/",
+			"/id_rsa",
+			"/cdn-cgi/",
+		}
+
+		// Check if path matches any suspicious pattern
+		for _, pattern := range suspiciousPatterns {
+			if strings.Contains(path, pattern) {
+				// Log the suspicious request
+				log.Printf("[SECURITY] Blocked suspicious request: %s %s from %s", r.Method, path, r.RemoteAddr)
+				// Return 403 Forbidden immediately without processing
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+		}
+
+		// Path is clean, continue to next handler
+		next.ServeHTTP(w, r)
+	})
 }
 
 // logRequest is a middleware that logs HTTP requests
