@@ -113,6 +113,7 @@ FROM alpine:3.19 AS test-base
 RUN apk add --no-cache \
     curl \
     bash \
+    file \
     sqlite-libs
 
 # Copy gitscan binary
