@@ -84,6 +84,14 @@ chown gitvet:gitvet /opt/gitvet/git-vet-server
 chmod 755 /opt/gitvet/git-vet-server
 echo "Built and installed git-vet-server with execute permissions"
 
+# Install deployment scripts for future updates
+mkdir -p /opt/gitvet/scripts
+cp deploy/update.sh /opt/gitvet/scripts/update.sh
+cp deploy/reset_cache.sh /opt/gitvet/scripts/reset_cache.sh
+chmod 755 /opt/gitvet/scripts/update.sh
+chmod 755 /opt/gitvet/scripts/reset_cache.sh
+echo "Installed deployment scripts to /opt/gitvet/scripts/"
+
 # Install systemd service (note: EOF without quotes to allow variable expansion)
 cat > /etc/systemd/system/gitvet.service << EOF
 [Unit]
@@ -155,7 +163,12 @@ systemctl status gitvet --no-pager
 echo ""
 echo "git.vet is running on http://localhost:6633"
 echo ""
+echo "Management commands:"
+echo "  Update:       sudo /opt/gitvet/scripts/update.sh"
+echo "  Reset cache:  sudo /opt/gitvet/scripts/reset_cache.sh"
+echo "  View logs:    journalctl -u gitvet -f"
+echo ""
 echo "Next steps:"
 echo "1. Configure your Cloudflare tunnel to point git.vet -> localhost:6633"
-echo "2. Check logs: journalctl -u gitvet -f"
+echo "2. Test the service: curl http://localhost:6633/github.com/baocin/gitscan"
 echo ""

@@ -157,9 +157,16 @@ fi
 
 # Clear cache and reset database if needed
 log_info "Resetting cache..."
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "$SCRIPT_DIR/reset_cache.sh" ]; then
-    if ! "$SCRIPT_DIR/reset_cache.sh" --quiet; then
+# Look for reset_cache.sh in the installed scripts directory first, then fall back to same directory
+RESET_CACHE_SCRIPT=""
+if [ -f "/opt/gitvet/scripts/reset_cache.sh" ]; then
+    RESET_CACHE_SCRIPT="/opt/gitvet/scripts/reset_cache.sh"
+elif [ -f "$(dirname "${BASH_SOURCE[0]}")/reset_cache.sh" ]; then
+    RESET_CACHE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/reset_cache.sh"
+fi
+
+if [ -n "$RESET_CACHE_SCRIPT" ]; then
+    if ! "$RESET_CACHE_SCRIPT" --quiet; then
         log_warn "Cache reset failed, continuing anyway..."
     fi
 else
@@ -213,6 +220,20 @@ sleep 2
 if ! systemctl is-active --quiet "$SERVICE_NAME"; then
     log_error "Service started but is not running!"
     fatal_error "Service crashed after start" "Check logs: journalctl -u $SERVICE_NAME -n 50"
+fi
+
+# Update the deployment scripts themselves (self-update)
+log_info "Updating deployment scripts..."
+if [ -d "/opt/gitvet/scripts" ]; then
+    if cp "$TEMP_DIR/deploy/update.sh" /opt/gitvet/scripts/update.sh && \
+       cp "$TEMP_DIR/deploy/reset_cache.sh" /opt/gitvet/scripts/reset_cache.sh; then
+        chmod 755 /opt/gitvet/scripts/update.sh /opt/gitvet/scripts/reset_cache.sh
+        log_info "Deployment scripts updated"
+    else
+        log_warn "Failed to update deployment scripts, continuing anyway..."
+    fi
+else
+    log_warn "Scripts directory /opt/gitvet/scripts not found, skipping script update"
 fi
 
 # Clean up backup on successful update
