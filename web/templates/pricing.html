@@ -110,23 +110,6 @@
             position: relative;
         }
 
-        .pricing-card.featured {
-            border-color: var(--accent);
-        }
-
-        .pricing-card.featured::before {
-            content: 'Most Popular';
-            position: absolute;
-            top: -12px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--accent);
-            color: var(--bg);
-            padding: 4px 16px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 600;
-        }
 
         .pricing-card h2 {
             font-size: 1.5rem;
@@ -244,7 +227,7 @@
     <section class="pricing-header">
         <div class="container">
             <h1>Simple Pricing</h1>
-            <p>Start scanning for free. Upgrade for more power.</p>
+            <p>Free security scanning for everyone. Enterprise support available.</p>
         </div>
     </section>
 
@@ -252,42 +235,35 @@
         <div class="pricing-card">
             <h2>Free</h2>
             <div class="price">$0</div>
-            <p class="description">For open source projects</p>
+            <p class="description">For open source projects and developers</p>
             <ul>
                 <li>Unlimited public repo scans</li>
-                <li>30 scans per hour</li>
-                <li>10-second delay for private repos</li>
-                <li>Community support</li>
+                <li>30 scans per hour per IP</li>
+                <li>10-second consent delay for private repos</li>
+                <li>Community support on GitHub</li>
+                <li>Self-hostable (open source)</li>
+                <li>No credit card required</li>
             </ul>
             <a href="/" class="pricing-btn secondary">Get Started</a>
         </div>
 
-        <div class="pricing-card featured">
-            <h2>Pro</h2>
-            <div class="price">$19<span>/month</span></div>
-            <p class="description">For professional developers</p>
+        <div class="pricing-card">
+            <h2>Enterprise</h2>
+            <div class="price">Custom</div>
+            <p class="description">For teams and organizations</p>
             <ul>
                 <li>Everything in Free</li>
                 <li>No delay for private repos</li>
-                <li>500 private repo scans/month</li>
-                <li>Priority queue</li>
-                <li>Email support</li>
-            </ul>
-            <a href="#" class="pricing-btn primary" id="checkout-pro">Subscribe</a>
-        </div>
-
-        <div class="pricing-card">
-            <h2>Team</h2>
-            <div class="price">$99<span>/month</span></div>
-            <p class="description">For teams and organizations</p>
-            <ul>
-                <li>Everything in Pro</li>
-                <li>Unlimited private repo scans</li>
-                <li>Team dashboard</li>
-                <li>Custom rules</li>
+                <li>Higher rate limits</li>
                 <li>Dedicated support</li>
+                <li>Custom deployment options</li>
+                <li>SLA guarantees</li>
             </ul>
-            <a href="mailto:team@git.vet" class="pricing-btn secondary">Contact Us</a>
+            <button class="pricing-btn primary" id="contact-enterprise">Contact Us</button>
+            <div id="enterprise-email" style="display: none; margin-top: 16px; padding: 16px; background: var(--bg); border-radius: 8px; text-align: center;">
+                <p style="margin-bottom: 8px; color: var(--text-muted); font-size: 0.9rem;">Get in touch:</p>
+                <a href="mailto:get@steel.red" style="color: var(--accent); font-size: 1.1rem; font-weight: 600; text-decoration: none;">get@steel.red</a>
+            </div>
         </div>
     </section>
 
@@ -302,11 +278,17 @@
     </footer>
 
     <script>
-        // Stripe checkout integration placeholder
-        document.getElementById('checkout-pro')?.addEventListener('click', function(e) {
+        // Show enterprise contact email on click
+        document.getElementById('contact-enterprise')?.addEventListener('click', function(e) {
             e.preventDefault();
-            // TODO: Integrate Stripe Checkout
-            alert('Stripe checkout coming soon!');
+            const emailDiv = document.getElementById('enterprise-email');
+            if (emailDiv.style.display === 'none') {
+                emailDiv.style.display = 'block';
+                this.textContent = 'Hide Contact';
+            } else {
+                emailDiv.style.display = 'none';
+                this.textContent = 'Contact Us';
+            }
         });
     </script>
 </body>
