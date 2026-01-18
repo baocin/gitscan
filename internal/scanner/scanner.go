@@ -251,12 +251,17 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 		return nil, fmt.Errorf("failed to start scanner: %w", err)
 	}
 
-	// Read stderr for progress updates
+	// Read stderr for progress updates and error messages
+	var stderrOutput strings.Builder
+	stderrDone := make(chan struct{})
 	go func() {
-		scanner := bufio.NewScanner(stderr)
+		defer close(stderrDone)
+		stderrScanner := bufio.NewScanner(stderr)
 		scannedFiles := 0
-		for scanner.Scan() {
-			line := scanner.Text()
+		for stderrScanner.Scan() {
+			line := stderrScanner.Text()
+			stderrOutput.WriteString(line)
+			stderrOutput.WriteString("\n")
 			// Parse progress from opengrep stderr output
 			if strings.Contains(line, "Scanning") || strings.Contains(line, "scanning") {
 				scannedFiles++
@@ -273,20 +278,33 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 
 	// Read JSON output
 	var jsonOutput strings.Builder
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024) // 10MB buffer
-	for scanner.Scan() {
-		jsonOutput.WriteString(scanner.Text())
+	stdoutScanner := bufio.NewScanner(stdout)
+	stdoutScanner.Buffer(make([]byte, 1024*1024), 10*1024*1024) // 10MB buffer
+	for stdoutScanner.Scan() {
+		jsonOutput.WriteString(stdoutScanner.Text())
 	}
 
 	// Wait for command to complete
 	err = cmd.Wait()
+
+	// Wait for stderr goroutine to finish collecting output
+	<-stderrDone
+
+	// Log stderr output for debugging (especially important when stdout is empty)
+	stderrStr := strings.TrimSpace(stderrOutput.String())
+	if stderrStr != "" {
+		log.Printf("[scanner] Stderr output: %s", stderrStr)
+	}
+
 	if err != nil {
 		// opengrep returns non-zero when findings are present, which is expected
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			if exitErr.ExitCode() == 1 {
 				// Exit code 1 means findings were found, not an error
 				err = nil
+			} else {
+				// Include stderr in error for debugging
+				return nil, fmt.Errorf("scanner failed with exit code %d: %s", exitErr.ExitCode(), stderrStr)
 			}
 		}
 	}
@@ -297,7 +315,12 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 
 	// Parse SARIF output
 	log.Printf("[scanner] Raw output length: %d bytes", len(jsonOutput.String()))
-	if len(jsonOutput.String()) < 500 {
+	if len(jsonOutput.String()) == 0 {
+		log.Printf("[scanner] WARNING: Scanner produced no output. This may indicate:")
+		log.Printf("[scanner]   - No rules were loaded (check --config setting)")
+		log.Printf("[scanner]   - Network issues preventing rule download (if using 'auto' config)")
+		log.Printf("[scanner]   - Repository has no scannable files")
+	} else if len(jsonOutput.String()) < 500 {
 		log.Printf("[scanner] Raw output: %s", jsonOutput.String())
 	} else {
 		log.Printf("[scanner] Raw output (first 500 chars): %s", jsonOutput.String()[:500])
