@@ -84,20 +84,29 @@ jobs:
           echo "Running opengrep scanner..."
           opengrep scan --quiet --config auto --sarif-output=/tmp/scan-results.json /tmp/test-repo || true
 
-          # Show results
-          echo "=== Scan Results ==="
+          # Show scanner progress (from stderr)
+          echo "=== Scanner Progress ==="
+          cat /tmp/scan-stderr.log | head -50
+
+          # Show JSON results
+          echo "=== Scan Results (JSON) ==="
           cat /tmp/scan-results.json | head -200
 
           # Verify we got JSON output
           if [ ! -s /tmp/scan-results.json ]; then
             echo "ERROR: No scan output generated"
+            echo "=== Stderr log ==="
+            cat /tmp/scan-stderr.log
             exit 1
           fi
 
           # Check for valid JSON structure
           if ! python3 -c "import json; json.load(open('/tmp/scan-results.json'))"; then
             echo "ERROR: Invalid JSON output"
+            echo "=== Full output ==="
             cat /tmp/scan-results.json
+            echo "=== Stderr log ==="
+            cat /tmp/scan-stderr.log
             exit 1
           fi
           echo "Scanner produced valid JSON output"
