@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -260,6 +261,9 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 	ctx, cancel := context.WithTimeout(ctx, c.cloneTimeout)
 	defer cancel()
 
+	log.Printf("[cache] Cloning %s (timeout: %v)", repoPath, c.cloneTimeout)
+	cloneStart := time.Now()
+
 	cmd := exec.CommandContext(ctx, "git", "clone",
 		"--depth", "1",
 		"--single-branch",
@@ -269,14 +273,18 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 	)
 
 	output, err := cmd.CombinedOutput()
+	cloneDuration := time.Since(cloneStart)
+
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("[cache] Clone timeout for %s after %v (git output: %s)", repoPath, cloneDuration, truncateOutput(string(output), 200))
 			return nil, &RepoError{
 				Type:    ErrCloneTimeout,
 				Message: fmt.Sprintf("Clone timed out after %v. The repository may be too large or the connection is slow.", c.cloneTimeout),
 				Details: string(output),
 			}
 		}
+		log.Printf("[cache] Clone failed for %s after %v: %v (git output: %s)", repoPath, cloneDuration, err, truncateOutput(string(output), 200))
 		return nil, classifyCloneError(string(output), err, repoURL, c.cloneTimeout)
 	}
 
@@ -295,6 +303,10 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 
 	// Get repo stats
 	sizeBytes, fileCount := c.getRepoStats(localPath)
+
+	// Log successful clone with stats
+	sizeMB := float64(sizeBytes) / (1024 * 1024)
+	log.Printf("[cache] Clone succeeded for %s: %d files, %.2f MB in %v", repoPath, fileCount, sizeMB, cloneDuration)
 
 	// Check size limit
 	if sizeBytes > c.maxRepoSize {
@@ -348,22 +360,32 @@ func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn 
 	}
 
 	// Fetch updates
+	log.Printf("[cache] Fetching updates for %s (timeout: %v)", dbRepo.URL, c.fetchTimeout)
+	fetchStart := time.Now()
+
 	ctx, cancel := context.WithTimeout(ctx, c.fetchTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "git", "-C", dbRepo.LocalPath, "fetch", "--depth", "1", "origin")
 	if output, err := cmd.CombinedOutput(); err != nil {
+		fetchDuration := time.Since(fetchStart)
 		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("[cache] Fetch timeout for %s after %v", dbRepo.URL, fetchDuration)
 			return nil, fmt.Errorf("fetch timed out after %v", c.fetchTimeout)
 		}
+		log.Printf("[cache] Fetch failed for %s after %v: %v (git output: %s)", dbRepo.URL, fetchDuration, err, truncateOutput(string(output), 200))
 		return nil, fmt.Errorf("fetch failed: %s - %w", string(output), err)
 	}
 
 	// Reset to latest
 	cmd = exec.CommandContext(ctx, "git", "-C", dbRepo.LocalPath, "reset", "--hard", "origin/HEAD")
 	if output, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("[cache] Reset failed for %s: %v (git output: %s)", dbRepo.URL, err, truncateOutput(string(output), 200))
 		return nil, fmt.Errorf("reset failed: %s - %w", string(output), err)
 	}
+
+	fetchDuration := time.Since(fetchStart)
+	log.Printf("[cache] Fetch succeeded for %s in %v", dbRepo.URL, fetchDuration)
 
 	// Make repo read-only again after git operations complete
 	if err := makeReadOnly(dbRepo.LocalPath); err != nil {
@@ -491,6 +513,17 @@ func truncate(s string, length int) string {
 		return s
 	}
 	return s[:length]
+}
+
+// truncateOutput truncates output and removes newlines for logging
+func truncateOutput(s string, maxLen int) string {
+	// Replace newlines with spaces for single-line logging
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.TrimSpace(s)
+	if len(s) > maxLen {
+		return s[:maxLen] + "..."
+	}
+	return s
 }
 
 // makeReadOnly recursively sets read-only permissions on a directory tree

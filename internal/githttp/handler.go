@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -353,6 +354,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 		if h.metrics != nil {
 			h.metrics.CloneErrors.Add(1)
 		}
+		log.Printf("Clone failed for %s (from %s) after %v: %v", parsed.FullPath, clientIP, cloneDuration, err)
 		h.writeFetchError(sb, report, parsed, err, boxWidth)
 		return
 	}
@@ -362,6 +364,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 		h.metrics.RecordCloneTime(cloneDuration)
 	}
 
+	log.Printf("Clone completed for %s: %d files, commit %s in %v", parsed.FullPath, repo.FileCount, repo.LastCommitSHA[:8], cloneDuration)
 	sb.WriteProgressf("%s [git.vet] Repository fetched", IconSuccess)
 
 	// Always delete the repo after scanning (success or failure)
@@ -441,6 +444,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 		if h.metrics != nil {
 			h.metrics.ScanErrors.Add(1) // Still count as error for metrics
 		}
+		log.Printf("Scan partial for %s: %s, recovered %d findings in %v", parsed.FullPath, scanResult.PartialReason, len(scanResult.Findings), scanDuration)
 		sb.WriteEmptyLine()
 		report.WriteBoxTop(boxWidth)
 		report.WriteBoxLine(sb.Color(Yellow, "⚠  WARNING: PARTIAL RESULTS"), boxWidth)
@@ -454,6 +458,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 		if h.metrics != nil {
 			h.metrics.ScanErrors.Add(1)
 		}
+		log.Printf("Scan failed for %s after %v: %v", parsed.FullPath, scanDuration, err)
 		sb.WriteEmptyLine()
 		report.WriteBoxTop(boxWidth)
 		report.WriteBoxLine(sb.Color(Red, "ERROR: Scan failed"), boxWidth)
@@ -468,6 +473,10 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 		h.metrics.RecordScanTime(scanDuration)
 	}
 
+	log.Printf("Scan completed for %s: %d findings (%d critical, %d high, %d medium, %d low) in %v",
+		parsed.FullPath, len(scanResult.Findings),
+		scanResult.CriticalCount, scanResult.HighCount,
+		scanResult.MediumCount, scanResult.LowCount, scanDuration)
 	sb.WriteProgressf("%s [git.vet] Scan complete!", IconSuccess)
 
 	// Step 4: Save scan results
