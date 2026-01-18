@@ -57,6 +57,22 @@ CREATE TABLE IF NOT EXISTS requests (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Security: Track suspicious requests and bans
+CREATE TABLE IF NOT EXISTS suspicious_requests (
+    id INTEGER PRIMARY KEY,
+    ip TEXT NOT NULL,
+    path TEXT NOT NULL,
+    user_agent TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS banned_ips (
+    ip TEXT PRIMARY KEY,
+    reason TEXT,
+    banned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME  -- NULL for permanent ban
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_repos_url ON repos(url);
 CREATE INDEX IF NOT EXISTS idx_scans_repo_commit ON scans(repo_id, commit_sha);
@@ -64,3 +80,5 @@ CREATE INDEX IF NOT EXISTS idx_requests_ip_time ON requests(ip, created_at);
 CREATE INDEX IF NOT EXISTS idx_requests_ssh_time ON requests(ssh_key_fingerprint, created_at)
     WHERE ssh_key_fingerprint IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_requests_repo_time ON requests(repo_url, created_at);
+CREATE INDEX IF NOT EXISTS idx_suspicious_ip_time ON suspicious_requests(ip, created_at);
+CREATE INDEX IF NOT EXISTS idx_banned_ips_expires ON banned_ips(expires_at);

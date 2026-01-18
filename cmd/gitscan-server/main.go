@@ -190,7 +190,7 @@ func main() {
 	// Create HTTP server with security middleware
 	httpServer := &http.Server{
 		Addr:         *listenAddr,
-		Handler:      logRequest(blockSuspiciousPaths(mux)),
+		Handler:      logRequest(blockSuspiciousPaths(database, mux)),
 		ReadTimeout:  5 * time.Minute,
 		WriteTimeout: 5 * time.Minute,
 		IdleTimeout:  60 * time.Second,
@@ -212,7 +212,7 @@ func main() {
 	if *tlsCert != "" && *tlsKey != "" {
 		httpsServer = &http.Server{
 			Addr:         *tlsAddr,
-			Handler:      logRequest(blockSuspiciousPaths(mux)),
+			Handler:      logRequest(blockSuspiciousPaths(database, mux)),
 			ReadTimeout:  5 * time.Minute,
 			WriteTimeout: 5 * time.Minute,
 			IdleTimeout:  60 * time.Second,
@@ -253,9 +253,38 @@ func main() {
 }
 
 // blockSuspiciousPaths is a middleware that blocks common hacking/scanning attempts
-func blockSuspiciousPaths(next http.Handler) http.Handler {
+func blockSuspiciousPaths(database *db.DB, next http.Handler) http.Handler {
+	// Configuration for auto-ban
+	const (
+		suspiciousRequestThreshold = 5                // Ban after 5 suspicious requests
+		suspiciousRequestWindow    = 5 * time.Minute  // Within 5 minutes
+		banDuration                = 24 * time.Hour   // Ban for 24 hours
+		tarpitDelay                = 30 * time.Second // Delay suspicious requests by 30s
+	)
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
+
+		// Extract client IP
+		clientIP := r.RemoteAddr
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			clientIP = strings.TrimSpace(parts[0])
+		} else if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			clientIP = xri
+		} else if idx := strings.LastIndex(clientIP, ":"); idx != -1 {
+			clientIP = clientIP[:idx]
+		}
+
+		// Check if IP is already banned
+		if database != nil {
+			banned, reason, err := database.IsIPBanned(clientIP)
+			if err == nil && banned {
+				log.Printf("[SECURITY] Rejected request from banned IP %s: %s", clientIP, reason)
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+		}
 
 		// Common attack patterns to block
 		suspiciousPatterns := []string{
@@ -287,8 +316,25 @@ func blockSuspiciousPaths(next http.Handler) http.Handler {
 		for _, pattern := range suspiciousPatterns {
 			if strings.Contains(path, pattern) {
 				// Log the suspicious request
-				log.Printf("[SECURITY] Blocked suspicious request: %s %s from %s", r.Method, path, r.RemoteAddr)
-				// Return 403 Forbidden immediately without processing
+				log.Printf("[SECURITY] Blocked suspicious request: %s %s from %s", r.Method, path, clientIP)
+
+				// Track suspicious request in database
+				if database != nil {
+					database.LogSuspiciousRequest(clientIP, path, r.UserAgent())
+
+					// Check if this IP should be auto-banned
+					count, err := database.CountRecentSuspiciousRequests(clientIP, suspiciousRequestWindow)
+					if err == nil && count >= suspiciousRequestThreshold {
+						reason := fmt.Sprintf("Auto-banned: %d suspicious requests in %v", count, suspiciousRequestWindow)
+						database.BanIP(clientIP, reason, banDuration)
+						log.Printf("[SECURITY] AUTO-BANNED IP %s: %s", clientIP, reason)
+					}
+				}
+
+				// Tarpit: delay response to waste attacker's time
+				time.Sleep(tarpitDelay)
+
+				// Return 403 Forbidden
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}

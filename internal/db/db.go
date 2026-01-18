@@ -339,3 +339,62 @@ func (db *DB) GetScanByCommitPrefix(commitPrefix string) (*ScanWithRepo, error) 
 
 	return &s, nil
 }
+
+// LogSuspiciousRequest logs a suspicious request attempt
+func (db *DB) LogSuspiciousRequest(ip, path, userAgent string) error {
+	_, err := db.conn.Exec(`
+		INSERT INTO suspicious_requests (ip, path, user_agent)
+		VALUES (?, ?, ?)
+	`, ip, path, nullString(userAgent))
+	return err
+}
+
+// CountRecentSuspiciousRequests counts suspicious requests from an IP in the last duration
+func (db *DB) CountRecentSuspiciousRequests(ip string, duration time.Duration) (int, error) {
+	var count int
+	since := time.Now().Add(-duration)
+	err := db.conn.QueryRow(`
+		SELECT COUNT(*) FROM suspicious_requests WHERE ip = ? AND created_at > ?
+	`, ip, since).Scan(&count)
+	return count, err
+}
+
+// BanIP adds an IP to the ban list
+func (db *DB) BanIP(ip, reason string, duration time.Duration) error {
+	var expiresAt interface{}
+	if duration > 0 {
+		expiresAt = time.Now().Add(duration)
+	} // else NULL for permanent ban
+
+	_, err := db.conn.Exec(`
+		INSERT OR REPLACE INTO banned_ips (ip, reason, banned_at, expires_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP, ?)
+	`, ip, reason, expiresAt)
+	return err
+}
+
+// IsIPBanned checks if an IP is currently banned
+func (db *DB) IsIPBanned(ip string) (bool, string, error) {
+	var reason string
+	var expiresAt sql.NullTime
+
+	err := db.conn.QueryRow(`
+		SELECT reason, expires_at FROM banned_ips WHERE ip = ?
+	`, ip).Scan(&reason, &expiresAt)
+
+	if err == sql.ErrNoRows {
+		return false, "", nil
+	}
+	if err != nil {
+		return false, "", err
+	}
+
+	// Check if ban has expired
+	if expiresAt.Valid && time.Now().After(expiresAt.Time) {
+		// Ban expired, remove it
+		db.conn.Exec(`DELETE FROM banned_ips WHERE ip = ?`, ip)
+		return false, "", nil
+	}
+
+	return true, reason, nil
+}

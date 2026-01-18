@@ -19,10 +19,25 @@ echo "=== git.vet Deployment ==="
 
 # Install dependencies
 apt-get update
-apt-get install -y git golang-go python3 python3-pip
+apt-get install -y git golang-go python3 python3-pip || true
+apt-get install -y cloudflared || true
 
-# Install opengrep (semgrep-compatible scanner)
-pip3 install opengrep || pip3 install semgrep
+# Install OpenGrep 1.15.1 if not already present
+OPENGREP_VERSION="1.15.1"
+if ! command -v opengrep &> /dev/null || [ "$(opengrep --version 2>/dev/null)" != "$OPENGREP_VERSION" ]; then
+    echo "Installing OpenGrep $OPENGREP_VERSION..."
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+        OPENGREP_URL="https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_aarch64"
+    else
+        OPENGREP_URL="https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86"
+    fi
+    wget -O /usr/local/bin/opengrep "$OPENGREP_URL"
+    chmod +x /usr/local/bin/opengrep
+    echo "OpenGrep $OPENGREP_VERSION installed"
+else
+    echo "OpenGrep $OPENGREP_VERSION already installed"
+fi
 
 # Verify scanner is installed and determine which one
 SCANNER_PATH=""
@@ -55,6 +70,7 @@ fi
 mkdir -p /opt/gitvet
 mkdir -p /var/lib/gitvet/cache
 mkdir -p /var/lib/gitvet/data
+mkdir -p /var/lib/gitvet/.semgrep
 chown -R gitvet:gitvet /var/lib/gitvet /home/gitvet
 chmod 755 /home/gitvet
 
@@ -80,6 +96,9 @@ User=gitvet
 Group=gitvet
 WorkingDirectory=/opt/gitvet
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="XDG_CACHE_HOME=/var/lib/gitvet/cache"
+Environment="XDG_CONFIG_HOME=/var/lib/gitvet"
+Environment="SEMGREP_SEND_METRICS=off"
 ExecStart=/opt/gitvet/git-vet-server \
     -listen :6633 \
     -db /var/lib/gitvet/data/gitvet.db \

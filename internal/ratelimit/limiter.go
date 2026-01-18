@@ -57,6 +57,15 @@ func (l *Limiter) Allow(ip, repoURL string) (bool, string) {
 	return l.AllowWithSSH(ip, "", repoURL)
 }
 
+// IsIPBanned checks if an IP is currently banned
+func (l *Limiter) IsIPBanned(ip string) (bool, string) {
+	banned, reason, err := l.db.IsIPBanned(ip)
+	if err != nil {
+		return false, ""
+	}
+	return banned, reason
+}
+
 // AllowWithSSH checks if a request should be allowed, considering SSH key
 func (l *Limiter) AllowWithSSH(ip, sshFingerprint, repoURL string) (bool, string) {
 	// Check per-IP per-minute limit
