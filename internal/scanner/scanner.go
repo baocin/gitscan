@@ -41,9 +41,9 @@ type Config struct {
 // DefaultConfig returns default scanner configuration
 func DefaultConfig() Config {
 	return Config{
-		BinaryPath: "opengrep", // Assumes opengrep is in PATH
-		RulesPath:  "",         // Use default rules
-		Timeout:    60 * time.Second,
+		BinaryPath: "opengrep",           // Assumes opengrep is in PATH
+		RulesPath:  "",                   // Use default rules
+		Timeout:    180 * time.Second,    // 3 minutes - increased for large repos
 		ScanLevel:  ScanLevelNormal,
 	}
 }
@@ -51,7 +51,7 @@ func DefaultConfig() Config {
 // New creates a new scanner instance
 func New(cfg Config) *Scanner {
 	if cfg.Timeout == 0 {
-		cfg.Timeout = 60 * time.Second
+		cfg.Timeout = 180 * time.Second
 	}
 	if cfg.ScanLevel == "" {
 		cfg.ScanLevel = ScanLevelNormal

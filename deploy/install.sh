@@ -111,7 +111,8 @@ ExecStart=/opt/gitvet/git-vet-server \
     -listen :6633 \
     -db /var/lib/gitvet/data/gitvet.db \
     -cache-dir /var/lib/gitvet/cache \
-    -opengrep $SCANNER_PATH
+    -opengrep $SCANNER_PATH \
+    -scan-timeout 300
 Restart=always
 RestartSec=5
 

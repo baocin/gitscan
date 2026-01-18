@@ -41,6 +41,7 @@ func main() {
 		cacheDir     = flag.String("cache-dir", "/tmp/gitscan-cache", "Repository cache directory")
 		openGrepPath = flag.String("opengrep", "opengrep", "Path to opengrep binary")
 		rulesPath    = flag.String("rules", "", "Path to opengrep rules directory")
+		scanTimeout  = flag.Int("scan-timeout", 180, "Scan timeout in seconds (default: 180s/3min)")
 		showVersion  = flag.Bool("version", false, "Show version and exit")
 	)
 	flag.Parse()
@@ -73,11 +74,12 @@ func main() {
 	scannerCfg := scanner.DefaultConfig()
 	scannerCfg.BinaryPath = *openGrepPath
 	scannerCfg.RulesPath = *rulesPath
+	scannerCfg.Timeout = time.Duration(*scanTimeout) * time.Second
 	scan := scanner.New(scannerCfg)
 
 	// Check if scanner is available
 	if available, path := scan.IsAvailable(); available {
-		log.Printf("Scanner initialized: %s (found at %s)", *openGrepPath, path)
+		log.Printf("Scanner initialized: %s (found at %s, timeout: %ds)", *openGrepPath, path, *scanTimeout)
 	} else {
 		log.Printf("WARNING: Scanner binary '%s' not found in PATH - scans will fail!", *openGrepPath)
 	}
