@@ -402,7 +402,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 		log.Printf("[scanner] Scan timed out after %v, attempting to parse partial results...", s.timeout)
 
 		if len(jsonOutput.String()) > 0 {
-			partialResult, parseErr := parseSARIFOutput(jsonOutput.String(), totalFiles, startTime)
+			partialResult, parseErr := parseSARIFOutput(jsonOutput.String(), repoPath, totalFiles, startTime)
 			if parseErr == nil && len(partialResult.Findings) > 0 {
 				// We got partial results! Return them with warning
 				partialResult.ScannerUsed = s.binaryPath
@@ -434,7 +434,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 				// (exit code 2 may be from cleanup/version check failures)
 				if stdoutStr != "" && strings.HasPrefix(stdoutStr, "{") {
 					// We have JSON output, try to parse it
-					if _, parseErr := parseSARIFOutput(stdoutStr, totalFiles, startTime); parseErr == nil {
+					if _, parseErr := parseSARIFOutput(stdoutStr, repoPath, totalFiles, startTime); parseErr == nil {
 						// Valid SARIF! Scan succeeded despite exit code 2
 						log.Printf("[scanner] Exit code 2 but valid SARIF output present, treating as success")
 						err = nil // Clear the error, proceed with normal parsing
@@ -480,7 +480,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 		log.Printf("[scanner] Raw output (first 500 chars): %s", jsonOutput.String()[:500])
 	}
 
-	result, err := parseSARIFOutput(jsonOutput.String(), totalFiles, startTime)
+	result, err := parseSARIFOutput(jsonOutput.String(), repoPath, totalFiles, startTime)
 	if err != nil {
 		log.Printf("[scanner] SARIF parse error: %v", err)
 		// If parsing fails, return basic result with empty findings
@@ -516,7 +516,7 @@ func (s *Scanner) mockScan(repoPath string, totalFiles int, startTime time.Time)
 }
 
 // parseSARIFOutput parses SARIF JSON output from opengrep
-func parseSARIFOutput(jsonStr string, totalFiles int, startTime time.Time) (*Result, error) {
+func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime time.Time) (*Result, error) {
 	if jsonStr == "" {
 		return &Result{
 			FilesScanned: totalFiles,
@@ -560,7 +560,8 @@ func parseSARIFOutput(jsonStr string, totalFiles int, startTime time.Time) (*Res
 
 			if len(r.Locations) > 0 {
 				loc := r.Locations[0].PhysicalLocation
-				finding.Path = loc.ArtifactLocation.URI
+				// Strip repository path prefix to show relative paths
+				finding.Path = strings.TrimPrefix(loc.ArtifactLocation.URI, repoPath+"/")
 				finding.StartLine = loc.Region.StartLine
 				finding.EndLine = loc.Region.EndLine
 				finding.StartCol = loc.Region.StartColumn

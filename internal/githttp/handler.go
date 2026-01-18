@@ -155,16 +155,26 @@ func (h *Handler) handleInfoRefs(ctx context.Context, w http.ResponseWriter, r *
 	pkt.WriteString(fmt.Sprintf("# service=%s\n", service))
 	pkt.WriteFlush()
 
-	// For gitscan, we advertise a fake ref to trigger the upload-pack phase
-	// The client will then request this ref, and we'll respond with our scan report
+	// For gitscan, we need to advertise a real commit OID to prevent
+	// "bad object" errors. Fetch the repo to get the actual HEAD commit.
+	cloneURL := fmt.Sprintf("https://%s.git", parsed.FullPath)
 
-	// Create a fake commit ID (this won't be used for actual data transfer)
-	fakeOID := "0000000000000000000000000000000000000000"
+	// Quick fetch to get commit SHA (uses cache if available)
+	repo, err := h.cache.FetchRepo(ctx, parsed.FullPath, cloneURL, nil)
+
+	var headOID string
+	if err != nil || repo == nil {
+		// Fallback to a valid-looking SHA if fetch fails
+		// This prevents protocol errors while still allowing the scan to proceed
+		headOID = "4b825dc642cb6eb9a060e54bf8d69288fbee4904" // Empty tree SHA
+	} else {
+		headOID = repo.LastCommitSHA
+	}
 
 	// Write ref advertisement with capabilities
 	caps := "multi_ack thin-pack side-band side-band-64k ofs-delta shallow deepen-since deepen-not deepen-relative no-progress include-tag multi_ack_detailed symref=HEAD:refs/heads/main agent=git.vet/1.0"
-	pkt.WriteString(fmt.Sprintf("%s HEAD\x00%s\n", fakeOID, caps))
-	pkt.WriteString(fmt.Sprintf("%s refs/heads/main\n", fakeOID))
+	pkt.WriteString(fmt.Sprintf("%s HEAD\x00%s\n", headOID, caps))
+	pkt.WriteString(fmt.Sprintf("%s refs/heads/main\n", headOID))
 	pkt.WriteFlush()
 
 	// Log info/refs request
