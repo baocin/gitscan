@@ -260,10 +260,12 @@ func TestScanOWASPNodeGoat(t *testing.T) {
 	t.Logf("Clone completed in %v", time.Since(cloneStart))
 
 	// Scan
+	// Use --quiet to suppress progress bar that can interfere with stdout parsing
 	t.Log("Running opengrep scan...")
 	scanStart := time.Now()
 	cmd = exec.CommandContext(ctx, opengrep,
 		"scan",
+		"--quiet",
 		"--config", "auto",
 		"--sarif",
 		repoDir,
@@ -349,6 +351,7 @@ func BenchmarkScanOWASPNodeGoat(b *testing.B) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		cmd := exec.CommandContext(ctx, opengrep,
 			"scan",
+			"--quiet",
 			"--config", "auto",
 			"--sarif",
 			repoDir,

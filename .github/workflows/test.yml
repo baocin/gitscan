@@ -79,10 +79,10 @@ jobs:
           # Clone this repo (contains test/fixtures/fake_secrets.go)
           git clone --depth 1 https://github.com/baocin/gitscan.git /tmp/test-repo
 
-          # Run scanner - JSON goes to file, progress/status to stderr (separate)
-          # Note: stderr contains visual progress output, stdout contains JSON
+          # Run scanner with SARIF output to file (--sarif-output writes directly to file)
+          # Use --quiet to suppress progress bar which can interfere with output
           echo "Running opengrep scanner..."
-          opengrep --config auto --json --metrics=off /tmp/test-repo > /tmp/scan-results.json 2>/tmp/scan-stderr.log || true
+          opengrep scan --quiet --config auto --sarif-output=/tmp/scan-results.json /tmp/test-repo || true
 
           # Show scanner progress (from stderr)
           echo "=== Scanner Progress ==="
