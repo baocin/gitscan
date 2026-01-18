@@ -263,9 +263,9 @@ func TestScanOWASPNodeGoat(t *testing.T) {
 	t.Log("Running opengrep scan...")
 	scanStart := time.Now()
 	cmd = exec.CommandContext(ctx, opengrep,
+		"scan",
 		"--config", "auto",
-		"--json",
-		"--metrics=off",
+		"--sarif",
 		repoDir,
 	)
 	scanOutput, err := cmd.CombinedOutput()
@@ -348,9 +348,9 @@ func BenchmarkScanOWASPNodeGoat(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		cmd := exec.CommandContext(ctx, opengrep,
+			"scan",
 			"--config", "auto",
-			"--json",
-			"--metrics=off",
+			"--sarif",
 			repoDir,
 		)
 		cmd.CombinedOutput() // Ignore error - findings cause non-zero exit
