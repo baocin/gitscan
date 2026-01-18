@@ -296,21 +296,25 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 		log.Printf("[scanner] Stderr output: %s", stderrStr)
 	}
 
+	// Check for timeout/cancellation first, before checking exit codes
+	if err != nil && ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("scan timed out after %v", s.timeout)
+	}
+
 	if err != nil {
 		// opengrep returns non-zero when findings are present, which is expected
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			if exitErr.ExitCode() == 1 {
 				// Exit code 1 means findings were found, not an error
 				err = nil
+			} else if exitErr.ExitCode() == -1 {
+				// Exit code -1 typically means killed by signal (could be timeout or OOM)
+				return nil, fmt.Errorf("scanner was terminated (exit code -1). This may indicate timeout, out of memory, or a crash. Stderr: %s", stderrStr)
 			} else {
 				// Include stderr in error for debugging
 				return nil, fmt.Errorf("scanner failed with exit code %d: %s", exitErr.ExitCode(), stderrStr)
 			}
 		}
-	}
-
-	if err != nil && ctx.Err() == context.DeadlineExceeded {
-		return nil, fmt.Errorf("scan timed out after %v", s.timeout)
 	}
 
 	// Parse SARIF output
