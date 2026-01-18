@@ -1,8 +1,19 @@
 #!/bin/bash
 set -e
 
-# git.vet Hetzner Deployment Script
-# Run as root on a fresh Ubuntu 22.04+ server
+# git.vet Ubuntu Installation Script
+# Run as root on Ubuntu 22.04+ server
+#
+# This script:
+# - Creates a 'gitvet' system user with home directory (/home/gitvet)
+# - Installs dependencies (Go, Python, opengrep/semgrep)
+# - Builds the git-vet-server binary
+# - Sets up systemd service
+# - Configures proper permissions for:
+#   - User home directory
+#   - Application binary (/opt/gitvet/git-vet-server)
+#   - Cache and data directories (/var/lib/gitvet)
+#   - Access to opengrep/semgrep scanner
 
 echo "=== git.vet Deployment ==="
 
@@ -26,14 +37,26 @@ else
     exit 1
 fi
 
-# Create app user
-useradd -r -s /bin/false gitvet || true
+# Create app user with home directory
+if ! id gitvet &>/dev/null; then
+    useradd -r -m -d /home/gitvet -s /bin/bash gitvet
+    echo "Created user 'gitvet' with home directory /home/gitvet"
+else
+    echo "User 'gitvet' already exists"
+    # Ensure home directory exists
+    if [ ! -d /home/gitvet ]; then
+        mkdir -p /home/gitvet
+        chown gitvet:gitvet /home/gitvet
+        chmod 755 /home/gitvet
+    fi
+fi
 
 # Create directories
 mkdir -p /opt/gitvet
 mkdir -p /var/lib/gitvet/cache
 mkdir -p /var/lib/gitvet/data
-chown -R gitvet:gitvet /var/lib/gitvet
+chown -R gitvet:gitvet /var/lib/gitvet /home/gitvet
+chmod 755 /home/gitvet
 
 # Build from source (or copy pre-built binary)
 cd /tmp
@@ -42,6 +65,8 @@ git clone https://github.com/baocin/gitscan.git
 cd gitscan
 go build -o /opt/gitvet/git-vet-server ./cmd/gitscan-server
 chown gitvet:gitvet /opt/gitvet/git-vet-server
+chmod 755 /opt/gitvet/git-vet-server
+echo "Built and installed git-vet-server with execute permissions"
 
 # Install systemd service (note: EOF without quotes to allow variable expansion)
 cat > /etc/systemd/system/gitvet.service << EOF
@@ -73,6 +98,30 @@ PrivateTmp=true
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# Verify permissions
+echo ""
+echo "=== Verifying Permissions ==="
+echo "Checking gitvet user can execute opengrep..."
+if sudo -u gitvet which $SCANNER_PATH &>/dev/null; then
+    echo "✓ gitvet user can access $SCANNER_PATH"
+else
+    echo "✗ WARNING: gitvet user cannot access $SCANNER_PATH"
+fi
+
+echo "Checking gitvet user can execute git-vet-server..."
+if sudo -u gitvet test -x /opt/gitvet/git-vet-server; then
+    echo "✓ gitvet user can execute /opt/gitvet/git-vet-server"
+else
+    echo "✗ WARNING: gitvet user cannot execute /opt/gitvet/git-vet-server"
+fi
+
+echo "Checking home directory permissions..."
+if [ -d /home/gitvet ] && [ "$(stat -c '%U' /home/gitvet)" = "gitvet" ]; then
+    echo "✓ /home/gitvet exists and is owned by gitvet"
+else
+    echo "✗ WARNING: /home/gitvet has incorrect ownership"
+fi
 
 # Enable and start service
 systemctl daemon-reload
