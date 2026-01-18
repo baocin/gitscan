@@ -445,6 +445,45 @@ func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn 
 		}, nil
 	}
 
+	// Check remote HEAD before fetching to avoid unnecessary work
+	repoURL := fmt.Sprintf("https://%s.git", dbRepo.URL)
+	remoteHead, err := c.checkRemoteHead(ctx, repoURL)
+	if err != nil {
+		// If we can't check remote, log and proceed with fetch anyway
+		log.Printf("[cache] Failed to check remote HEAD for %s: %v, proceeding with fetch", dbRepo.URL, err)
+	} else if remoteHead == dbRepo.LastCommitSHA {
+		// Remote HEAD matches our cached version - no need to fetch
+		log.Printf("[cache] Remote HEAD matches cached SHA %s for %s, skipping fetch", truncate(remoteHead, 8), dbRepo.URL)
+
+		// Just update the last_fetched_at timestamp to refresh the cache
+		sizeBytes, fileCount := c.getRepoStats(dbRepo.LocalPath)
+		if err := c.db.UpdateRepoFetched(dbRepo.ID, dbRepo.LastCommitSHA, sizeBytes, fileCount); err != nil {
+			return nil, fmt.Errorf("failed to update repo timestamp: %w", err)
+		}
+
+		if progressFn != nil {
+			progressFn("Repository is up to date")
+		}
+
+		// Detect license
+		licenseType := ""
+		if licInfo := license.Detect(dbRepo.LocalPath); licInfo != nil {
+			licenseType = licInfo.Type
+		}
+
+		return &CachedRepo{
+			ID:            dbRepo.ID,
+			URL:           dbRepo.URL,
+			LocalPath:     dbRepo.LocalPath,
+			LastCommitSHA: dbRepo.LastCommitSHA,
+			FileCount:     fileCount,
+			License:       licenseType,
+		}, nil
+	}
+
+	// Remote has changed, proceed with fetch/reset
+	log.Printf("[cache] Remote HEAD %s differs from cached %s, fetching updates", truncate(remoteHead, 8), truncate(dbRepo.LastCommitSHA, 8))
+
 	// Make repo writable temporarily for git operations
 	if err := makeWritable(dbRepo.LocalPath); err != nil {
 		return nil, fmt.Errorf("failed to make repo writable: %w", err)
@@ -526,6 +565,27 @@ func (c *RepoCache) getHeadCommit(repoPath string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+// checkRemoteHead gets the remote HEAD commit SHA without fetching
+// Returns the commit SHA or empty string if unable to determine
+func (c *RepoCache) checkRemoteHead(ctx context.Context, repoURL string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", "ls-remote", repoURL, "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git ls-remote failed: %w", err)
+	}
+
+	// Output format: "commit-sha\tHEAD\n"
+	parts := strings.Fields(string(output))
+	if len(parts) < 1 {
+		return "", fmt.Errorf("unexpected ls-remote output: %s", output)
+	}
+
+	return strings.TrimSpace(parts[0]), nil
 }
 
 // getRepoStats gets repository size and file count
