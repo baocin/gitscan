@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/baocin/gitscan/internal/db"
+	"github.com/baocin/gitscan/internal/githttp"
 	"github.com/baocin/gitscan/internal/scanner"
 )
 
@@ -136,7 +137,8 @@ func (h *Handler) ServeReport(w http.ResponseWriter, r *http.Request) {
 			if scan.ResultsJSON != "" {
 				var findings []scanner.Finding
 				if err := json.Unmarshal([]byte(scan.ResultsJSON), &findings); err == nil {
-					data.Findings = findings
+					// Sort findings by severity (Critical -> High -> Medium -> Low, worst first)
+					data.Findings = githttp.SortFindingsBySeverity(findings)
 				}
 			}
 		}

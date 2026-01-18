@@ -590,8 +590,8 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 		// Parse findings from ResultsJSON
 		var findings []scanner.Finding
 		if err := json.Unmarshal([]byte(scan.ResultsJSON), &findings); err == nil {
-			// Sort by severity (Low -> Medium -> High -> Critical for terminal scroll)
-			sortedFindings := sortFindingsBySeverity(findings)
+			// Sort by severity (Critical -> High -> Medium -> Low, worst first)
+			sortedFindings := SortFindingsBySeverity(findings)
 
 			// Show all findings
 			for i, f := range sortedFindings {
@@ -653,16 +653,16 @@ func getSeverityIcon(sb *SidebandWriter, severity string) string {
 	}
 }
 
-// sortFindingsBySeverity sorts findings from low to high priority
-// so terminal scrolls up to most important findings at the end
-func sortFindingsBySeverity(findings []scanner.Finding) []scanner.Finding {
+// SortFindingsBySeverity sorts findings from high to low priority
+// so most critical issues are displayed first
+func SortFindingsBySeverity(findings []scanner.Finding) []scanner.Finding {
 	// Create a copy to avoid modifying original
 	sorted := make([]scanner.Finding, len(findings))
 	copy(sorted, findings)
 
-	// Sort by severity priority (low first, critical last)
+	// Sort by severity priority (critical first, info last)
 	severityOrder := map[string]int{
-		"info": 0, "low": 1, "medium": 2, "high": 3, "warning": 3, "critical": 4, "error": 4,
+		"critical": 0, "error": 0, "high": 1, "warning": 1, "medium": 2, "low": 3, "info": 4,
 	}
 
 	for i := 0; i < len(sorted)-1; i++ {

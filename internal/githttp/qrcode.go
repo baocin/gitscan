@@ -7,9 +7,9 @@ import (
 )
 
 // GenerateScaledQR generates a large, scannable QR code
-// Uses 2 characters per module horizontally for better phone scanning
+// Uses 2 characters per module with full blocks for maximum reliability and 80-char compatibility
 func GenerateScaledQR(url string) []string {
-	qr, err := qrcode.New(url, qrcode.Medium)
+	qr, err := qrcode.New(url, qrcode.High)
 	if err != nil {
 		// Return error message instead of fake QR
 		return []string{
@@ -30,64 +30,37 @@ func GenerateScaledQR(url string) []string {
 
 	// Quiet zone: 4 modules of white space on all sides (QR spec recommends 4)
 	// With 2 chars per module horizontally, that's 8 spaces on left/right
-	quietMargin := "        " // 8 spaces (4 modules * 2 chars)
+	quietMargin := strings.Repeat(" ", 8) // 4 modules * 2 chars
 	qrWidth := len(bitmap[0])*2 + 16 // QR width + left/right quiet zones
 	quietLine := strings.Repeat(" ", qrWidth)
 
-	// Add top quiet zone (4 lines for 4 modules, since we render 2 rows per line)
-	lines = append(lines, quietLine)
-	lines = append(lines, quietLine)
+	// Add top quiet zone (4 lines for 4 modules vertically)
+	for i := 0; i < 4; i++ {
+		lines = append(lines, quietLine)
+	}
 
-	// Process 2 rows at a time using half-block characters
-	// This gives us 2 vertical pixels per character line
-	for y := 0; y < len(bitmap); y += 2 {
+	// Process 1 row at a time, 2 chars per module
+	// Use only full blocks and spaces for maximum terminal compatibility
+	for y := 0; y < len(bitmap); y++ {
 		var line strings.Builder
 		line.WriteString(quietMargin) // Left quiet zone
 
 		for x := 0; x < len(bitmap[y]); x++ {
-			top := bitmap[y][x]
-			bottom := false
-			if y+1 < len(bitmap) {
-				bottom = bitmap[y+1][x]
-			}
-
 			// QR codes: true = black module (data), false = white (background)
-			// Terminal: we want black modules to show as filled blocks
-			var char string
-			if top && bottom {
-				char = "██" // Both black - full block, 2 wide
-			} else if top && !bottom {
-				char = "▀▀" // Top black, bottom white - upper half, 2 wide
-			} else if !top && bottom {
-				char = "▄▄" // Top white, bottom black - lower half, 2 wide
-			} else {
-				char = "  " // Both white - spaces, 2 wide
-			}
-			line.WriteString(char)
-		}
-		line.WriteString(quietMargin) // Right quiet zone
-		lines = append(lines, line.String())
-	}
-
-	// Handle odd number of rows
-	if len(bitmap)%2 == 1 {
-		var line strings.Builder
-		line.WriteString(quietMargin) // Left quiet zone
-		y := len(bitmap) - 1
-		for x := 0; x < len(bitmap[y]); x++ {
 			if bitmap[y][x] {
-				line.WriteString("▀▀")
+				line.WriteString("██") // Black module - 2 full blocks
 			} else {
-				line.WriteString("  ")
+				line.WriteString("  ") // White module - 2 spaces
 			}
 		}
 		line.WriteString(quietMargin) // Right quiet zone
 		lines = append(lines, line.String())
 	}
 
-	// Add bottom quiet zone
-	lines = append(lines, quietLine)
-	lines = append(lines, quietLine)
+	// Add bottom quiet zone (4 lines)
+	for i := 0; i < 4; i++ {
+		lines = append(lines, quietLine)
+	}
 
 	return lines
 }
