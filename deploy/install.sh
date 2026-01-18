@@ -112,7 +112,8 @@ ExecStart=/opt/gitvet/git-vet-server \
     -db /var/lib/gitvet/data/gitvet.db \
     -cache-dir /var/lib/gitvet/cache \
     -opengrep $SCANNER_PATH \
-    -scan-timeout 300
+    -scan-timeout 300 \
+    -reset-db=false
 Restart=always
 RestartSec=5
 
@@ -168,6 +169,11 @@ echo "Management commands:"
 echo "  Update:       sudo /opt/gitvet/scripts/update.sh"
 echo "  Reset cache:  sudo /opt/gitvet/scripts/reset_cache.sh"
 echo "  View logs:    journalctl -u gitvet -f"
+echo ""
+echo "Database management:"
+echo "  Location:     /var/lib/gitvet/data/gitvet.db"
+echo "  Persistence:  Database persists across restarts (scan history preserved)"
+echo "  Manual reset: sudo rm /var/lib/gitvet/data/gitvet.db && sudo systemctl restart gitvet"
 echo ""
 echo "Next steps:"
 echo "1. Configure your Cloudflare tunnel to point git.vet -> localhost:6633"

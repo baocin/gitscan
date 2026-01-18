@@ -257,3 +257,6 @@ systemctl status "$SERVICE_NAME" --no-pager
 echo ""
 echo "View logs: journalctl -u $SERVICE_NAME -f"
 echo "Test service: curl http://localhost:6633/github.com/baocin/gitscan"
+echo ""
+echo "Note: Database persists across updates (scan history preserved)"
+echo "To reset database: sudo rm /var/lib/gitvet/data/gitvet.db && sudo systemctl restart gitvet"
