@@ -52,11 +52,7 @@ func TestMistypedRepoName(t *testing.T) {
 			url:         "https://github.com/baocin/gitstcan.git", // ts instead of ts
 			description: "Swapped characters in repo name",
 		},
-		{
-			name:        "wrong_case_owner",
-			url:         "https://github.com/BAOCIN/gitscan.git", // uppercase owner
-			description: "Wrong case in owner (GitHub is case-sensitive for some operations)",
-		},
+		// Note: GitHub is case-insensitive for git clone, so wrong_case_owner is not tested
 		{
 			name:        "completely_fake_repo",
 			url:         "https://github.com/definitely-not-real-user-xyz/nonexistent-repo-abc123.git",
@@ -380,10 +376,7 @@ func TestEmptyOwnerRepo(t *testing.T) {
 			name: "just_host",
 			url:  "https://github.com/.git",
 		},
-		{
-			name: "trailing_slash",
-			url:  "https://github.com/baocin/gitscan/",
-		},
+		// Note: trailing slash URLs work fine, so not tested here
 	}
 
 	for _, tc := range testCases {

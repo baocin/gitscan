@@ -264,9 +264,9 @@ func TestScannerWithOpengrep(t *testing.T) {
 	// Run opengrep with auto config
 	t.Log("Running scanner...")
 	cmd = exec.CommandContext(ctx, opengrep,
+		"scan",
 		"--config", "auto",
-		"--json",
-		"--metrics=off",
+		"--sarif",
 		repoDir,
 	)
 	scanOutput, err := cmd.CombinedOutput()

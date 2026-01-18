@@ -43,7 +43,7 @@ if ! command -v opengrep &> /dev/null || ! opengrep --version &> /dev/null; then
     if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
         OPENGREP_URL="https://github.com/opengrep/opengrep/releases/download/v1.15.1/opengrep_manylinux_aarch64"
     else
-        OPENGREP_URL="https://github.com/opengrep/opengrep/releases/download/v1.15.1/opengrep_manylinux_x86_64"
+        OPENGREP_URL="https://github.com/opengrep/opengrep/releases/download/v1.15.1/opengrep_manylinux_x86"
     fi
     curl -L -o /tmp/opengrep-bin "$OPENGREP_URL"
     chmod +x /tmp/opengrep-bin

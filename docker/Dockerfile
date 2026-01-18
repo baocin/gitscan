@@ -56,12 +56,21 @@ RUN apk add --no-cache \
     musl-dev \
     libffi-dev
 
-# Install opengrep via pip with pinned version for consistent SARIF output
+# Install opengrep binary with pinned version for consistent SARIF output
 # IMPORTANT: When updating this version, also update:
 # - internal/version/version.go
 # - .github/workflows/test.yml
-ARG OPENGREP_VERSION=1.99.0
-RUN pip install --no-cache-dir "opengrep==${OPENGREP_VERSION}" && \
+ARG OPENGREP_VERSION=1.15.1
+ARG TARGETARCH
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        OPENGREP_URL="https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_aarch64"; \
+    else \
+        OPENGREP_URL="https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86"; \
+    fi && \
+    echo "Downloading opengrep from $OPENGREP_URL" && \
+    wget -O /usr/local/bin/opengrep "$OPENGREP_URL" && \
+    chmod +x /usr/local/bin/opengrep && \
     echo "=== Checking installed scanner ===" && \
     opengrep --version
 

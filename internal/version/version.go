@@ -12,8 +12,8 @@ package version
 // 5. Update .github/workflows/test.yml
 const (
 	// OpenGrepVersion is the pinned version of opengrep for consistent scanning.
-	// See: https://pypi.org/project/opengrep/
-	OpenGrepVersion = "1.99.0"
+	// See: https://github.com/opengrep/opengrep/releases
+	OpenGrepVersion = "1.15.1"
 
 	// MinimumGoVersion is the minimum supported Go version.
 	MinimumGoVersion = "1.22"
