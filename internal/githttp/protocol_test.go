@@ -71,13 +71,41 @@ func TestParseRepoPathFull(t *testing.T) {
 			wantRepo:  "repo",
 			wantMode:  "plain",
 		},
-		// Error cases
+		// Bug fix: duplicate github.com URL - auto-correct
 		{
-			name:        "duplicate host in path (github.com/github.com/...)",
-			urlPath:     "/github.com/github.com/WebGoat/WebGoat/info/refs",
-			wantErr:     true,
-			errContains: "found 'github.com' where owner was expected",
+			name:      "duplicate github.com in path - should auto-correct",
+			urlPath:   "/github.com/github.com/WebGoat/WebGoat/info/refs",
+			wantHost:  "github.com",
+			wantOwner: "WebGoat",
+			wantRepo:  "WebGoat",
+			wantMode:  "scan",
 		},
+		{
+			name:      "duplicate gitlab.com in path - should auto-correct",
+			urlPath:   "/gitlab.com/gitlab.com/owner/repo/info/refs",
+			wantHost:  "gitlab.com",
+			wantOwner: "owner",
+			wantRepo:  "repo",
+			wantMode:  "scan",
+		},
+		// Bug fix: user pastes full URL with https://
+		{
+			name:      "full URL with https:// pasted",
+			urlPath:   "/https:/github.com/owner/repo/info/refs",
+			wantHost:  "github.com",
+			wantOwner: "owner",
+			wantRepo:  "repo",
+			wantMode:  "scan",
+		},
+		{
+			name:      "full URL with http:// pasted",
+			urlPath:   "/http:/github.com/owner/repo/info/refs",
+			wantHost:  "github.com",
+			wantOwner: "owner",
+			wantRepo:  "repo",
+			wantMode:  "scan",
+		},
+		// Error cases
 		{
 			name:        "unsupported host",
 			urlPath:     "/sourcehut.org/user/repo/info/refs",
@@ -97,10 +125,10 @@ func TestParseRepoPathFull(t *testing.T) {
 			errContains: "need host/owner/repo format",
 		},
 		{
-			name:        "gitlab as owner (cross-host confusion)",
-			urlPath:     "/github.com/gitlab.com/project/info/refs",
+			name:        "duplicate host with missing repo",
+			urlPath:     "/github.com/github.com/owner/info/refs",
 			wantErr:     true,
-			errContains: "found 'gitlab.com' where owner was expected",
+			errContains: "duplicate host detected",
 		},
 	}
 
@@ -154,9 +182,9 @@ func TestParseRepoPathFull(t *testing.T) {
 
 func TestGetCloneURL(t *testing.T) {
 	tests := []struct {
-		name     string
-		urlPath  string
-		wantURL  string
+		name    string
+		urlPath string
+		wantURL string
 	}{
 		{
 			name:    "github repo",
@@ -177,6 +205,11 @@ func TestGetCloneURL(t *testing.T) {
 			name:    "repo with dots",
 			urlPath: "/github.com/user/repo.js/info/refs",
 			wantURL: "https://github.com/user/repo.js.git",
+		},
+		{
+			name:    "duplicate github.com auto-corrected",
+			urlPath: "/github.com/github.com/WebGoat/WebGoat/info/refs",
+			wantURL: "https://github.com/WebGoat/WebGoat.git",
 		},
 	}
 
