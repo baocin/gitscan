@@ -31,9 +31,10 @@ echo "Installing binary..."
 cp git-vet-server /opt/gitvet/git-vet-server
 chown gitvet:gitvet /opt/gitvet/git-vet-server
 
-# Clear cache to force fresh scans
-echo "Clearing cache..."
-rm -rf /var/lib/gitvet/cache/*
+# Clear cache and fix any malformed database entries
+echo "Resetting cache..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$SCRIPT_DIR/reset_cache.sh" --quiet
 
 # Install/update opengrep if needed
 if ! command -v opengrep &> /dev/null || ! opengrep --version &> /dev/null; then
