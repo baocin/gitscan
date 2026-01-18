@@ -288,25 +288,41 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	// Validate repository path exists before attempting scan
+	if stat, err := os.Stat(repoPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("repository path does not exist: %s (this indicates a cache directory issue)", repoPath)
+		}
+		return nil, fmt.Errorf("cannot access repository path %s: %w", repoPath, err)
+	} else if !stat.IsDir() {
+		return nil, fmt.Errorf("repository path is not a directory: %s", repoPath)
+	}
+
 	cmd := exec.CommandContext(ctx, s.binaryPath, args...)
 	// Set QT_QPA_PLATFORM=offscreen to prevent Qt display errors on headless servers
 	cmd.Env = append(os.Environ(), "QT_QPA_PLATFORM=offscreen")
 	log.Printf("[scanner] Running (%s): %s %s", s.scanLevel, s.binaryPath, strings.Join(args, " "))
+	log.Printf("[scanner] Repository path: %s", repoPath)
 
-	// Log environment info for debugging configuration issues
-	if stat, err := os.Stat(repoPath); err == nil {
-		log.Printf("[scanner] Repository path: %s (readable: %t)", repoPath, stat.IsDir())
-	} else {
-		log.Printf("[scanner] Repository path error: %v", err)
-	}
-
-	// Log cache directory for config auto downloads
+	// Log cache directory for config auto downloads and ensure it exists
 	if cacheDir, err := os.UserCacheDir(); err == nil {
 		log.Printf("[scanner] User cache dir: %s", cacheDir)
 		semgrepCache := filepath.Join(cacheDir, "semgrep")
 		if stat, err := os.Stat(semgrepCache); err == nil {
 			log.Printf("[scanner] Semgrep cache exists: %s (readable: %t)", semgrepCache, stat.IsDir())
+		} else if os.IsNotExist(err) {
+			// Create semgrep cache directory with proper permissions
+			log.Printf("[scanner] Semgrep cache missing, creating: %s", semgrepCache)
+			if err := os.MkdirAll(semgrepCache, 0755); err != nil {
+				log.Printf("[scanner] Warning: failed to create semgrep cache: %v", err)
+			} else {
+				log.Printf("[scanner] Semgrep cache created successfully")
+			}
+		} else {
+			log.Printf("[scanner] Warning: semgrep cache stat error: %v", err)
 		}
+	} else {
+		log.Printf("[scanner] Warning: cannot determine user cache dir: %v", err)
 	}
 
 	// Capture stdout for JSON output
@@ -370,8 +386,13 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 
 	// Log stderr output for debugging (especially important when stdout is empty)
 	stderrStr := strings.TrimSpace(stderrOutput.String())
+	stdoutStr := strings.TrimSpace(jsonOutput.String())
 	if stderrStr != "" {
 		log.Printf("[scanner] Stderr output: %s", stderrStr)
+	}
+	// Also log stdout if it's not SARIF JSON (likely an error message)
+	if stdoutStr != "" && !strings.HasPrefix(stdoutStr, "{") {
+		log.Printf("[scanner] Stdout (non-JSON): %s", stdoutStr)
 	}
 
 	// Check for timeout/cancellation first, before checking exit codes
@@ -408,11 +429,20 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 				return nil, fmt.Errorf("scanner was terminated (exit code -1). This may indicate timeout, out of memory, or a crash. Stderr: %s", stderrStr)
 			} else if exitErr.ExitCode() == 2 {
 				// Exit code 2 indicates configuration/rules error
-				if stderrStr == "" {
-					stderrStr = "No error output captured. Common causes: network failure downloading rules (--config auto), permission issues accessing cache directory, or invalid configuration. Check logs above for cache directory info."
+				// Combine stderr and stdout for error message (config errors may go to either)
+				errorMsg := stderrStr
+				if stdoutStr != "" && !strings.HasPrefix(stdoutStr, "{") {
+					if errorMsg != "" {
+						errorMsg = fmt.Sprintf("Stderr: %s; Stdout: %s", errorMsg, stdoutStr)
+					} else {
+						errorMsg = stdoutStr
+					}
 				}
-				log.Printf("[scanner] Configuration error (exit code 2): %s", stderrStr)
-				return nil, fmt.Errorf("scanner configuration error (exit code 2): %s", stderrStr)
+				if errorMsg == "" {
+					errorMsg = "No error output captured. Common causes: network failure downloading rules (--config auto), permission issues accessing cache directory, or invalid configuration. Check logs above for cache directory info."
+				}
+				log.Printf("[scanner] Configuration error (exit code 2): %s", errorMsg)
+				return nil, fmt.Errorf("scanner configuration error (exit code 2): %s", errorMsg)
 			} else {
 				// Include stderr and exit code in error for debugging
 				log.Printf("[scanner] Failed with exit code %d: %s", exitErr.ExitCode(), stderrStr)

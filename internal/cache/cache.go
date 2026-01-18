@@ -216,6 +216,20 @@ func (c *RepoCache) FetchRepo(ctx context.Context, repoPath, cloneURL string, pr
 	if dbRepo != nil {
 		// Check if cache is fresh
 		if time.Since(dbRepo.LastFetchedAt) < c.staleAfter {
+			// Verify the directory actually exists before returning cached version
+			if _, err := os.Stat(dbRepo.LocalPath); err != nil {
+				if os.IsNotExist(err) {
+					log.Printf("[cache] Cached repo directory missing for %s, re-cloning", repoPath)
+					// Directory doesn't exist, need to update (will trigger re-clone)
+					if progressFn != nil {
+						progressFn("Cached directory missing, re-cloning...")
+					}
+					return c.updateRepo(ctx, dbRepo, progressFn)
+				}
+				// Other stat errors (permissions, etc.) - log but try to use anyway
+				log.Printf("[cache] Warning: stat error for %s: %v", dbRepo.LocalPath, err)
+			}
+
 			// Return cached version
 			if progressFn != nil {
 				progressFn("Using cached repository")
