@@ -60,6 +60,7 @@ func classifyCloneError(output string, originalErr error, repoURL string, timeou
 
 	// Check for repo not found
 	if strings.Contains(outputLower, "repository not found") ||
+		strings.Contains(outputLower, "could not be found") ||
 		strings.Contains(outputLower, "not found") && strings.Contains(outputLower, "fatal") {
 		return &RepoError{
 			Type:    ErrRepoNotFound,
@@ -71,6 +72,7 @@ func classifyCloneError(output string, originalErr error, repoURL string, timeou
 	// Check for authentication/permission issues
 	if strings.Contains(outputLower, "authentication failed") ||
 		strings.Contains(outputLower, "could not read username") ||
+		strings.Contains(outputLower, "could not read password") ||
 		strings.Contains(outputLower, "403") ||
 		strings.Contains(outputLower, "permission denied") {
 		return &RepoError{

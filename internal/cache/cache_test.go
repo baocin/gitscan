@@ -172,3 +172,206 @@ func TestRepoErrorImplementsError(t *testing.T) {
 		t.Error("errors.Is(err, ErrRepoNotFound) should be true")
 	}
 }
+
+// TestClassifyCloneErrorMistypedRepos tests error classification for common typo scenarios
+func TestClassifyCloneErrorMistypedRepos(t *testing.T) {
+	tests := []struct {
+		name         string
+		output       string
+		description  string
+		expectedType error
+	}{
+		{
+			name:         "github_404_not_found",
+			output:       "Cloning into 'repo'...\nremote: Not Found\nfatal: repository 'https://github.com/baocin/gitscam/' not found",
+			description:  "Mistyped repo name - GitHub returns 404",
+			expectedType: ErrRepoNotFound,
+		},
+		{
+			name:         "github_private_or_nonexistent",
+			output:       "Cloning into 'repo'...\nremote: Repository not found.\nfatal: Authentication failed for 'https://github.com/baocn/gitscan.git/'",
+			description:  "Mistyped owner - GitHub says not found then auth failed",
+			expectedType: ErrRepoNotFound, // "Repository not found" message takes precedence
+		},
+		{
+			name:         "gitlab_404",
+			output:       "Cloning into 'repo'...\nremote: The project you were looking for could not be found.\nfatal: Could not read from remote repository.",
+			description:  "GitLab non-existent project",
+			expectedType: ErrRepoNotFound,
+		},
+		{
+			name:         "bitbucket_404",
+			output:       "Cloning into 'repo'...\nfatal: repository 'https://bitbucket.org/user/nonexistent-repo/' not found",
+			description:  "Bitbucket non-existent repo",
+			expectedType: ErrRepoNotFound,
+		},
+		{
+			name:         "host_typo_dns_fail",
+			output:       "Cloning into 'repo'...\nfatal: unable to access 'https://githbu.com/baocin/gitscan/': Could not resolve host: githbu.com",
+			description:  "Typo in hostname causes DNS failure",
+			expectedType: ErrNetworkError,
+		},
+		{
+			name:         "username_prompt_for_private",
+			output:       "Cloning into 'repo'...\nfatal: could not read Username for 'https://github.com': terminal prompts disabled",
+			description:  "Private repo prompts for username",
+			expectedType: ErrRepoPrivate,
+		},
+		{
+			name:         "password_prompt_for_private",
+			output:       "Cloning into 'repo'...\nfatal: could not read Password for 'https://github.com': terminal prompts disabled",
+			description:  "Private repo prompts for password",
+			expectedType: ErrRepoPrivate,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := classifyCloneError(tc.output, errors.New("git error"), "https://example.com/repo", 30*time.Second)
+
+			var repoErr *RepoError
+			if !errors.As(err, &repoErr) {
+				t.Fatalf("Expected RepoError for %s, got %T", tc.description, err)
+			}
+
+			if !errors.Is(repoErr.Type, tc.expectedType) {
+				t.Errorf("%s: Expected error type %v, got %v\nOutput was: %s", tc.description, tc.expectedType, repoErr.Type, tc.output)
+			}
+		})
+	}
+}
+
+// TestClassifyCloneErrorEdgeCases tests edge cases in error classification
+func TestClassifyCloneErrorEdgeCases(t *testing.T) {
+	tests := []struct {
+		name         string
+		output       string
+		expectedType error
+	}{
+		{
+			name:         "empty_output",
+			output:       "",
+			expectedType: nil, // Will use original error
+		},
+		{
+			name:         "whitespace_only",
+			output:       "   \n\n  \t  ",
+			expectedType: nil, // Will use original error
+		},
+		{
+			name:         "mixed_case_not_found",
+			output:       "FATAL: REPOSITORY NOT FOUND",
+			expectedType: ErrRepoNotFound,
+		},
+		{
+			name:         "rate_limit_with_429",
+			output:       "error: RPC failed; HTTP 429 Too Many Requests",
+			expectedType: ErrRateLimited,
+		},
+		{
+			name:         "rate_limit_github_style",
+			output:       "fatal: unable to access: rate limit exceeded",
+			expectedType: ErrRateLimited,
+		},
+		{
+			name:         "connection_timeout",
+			output:       "fatal: unable to access 'https://slow-server.com/repo': Connection timed out",
+			expectedType: ErrNetworkError,
+		},
+		{
+			name:         "ssl_error",
+			output:       "fatal: unable to access 'https://example.com/repo': SSL certificate problem",
+			expectedType: ErrNetworkError,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			originalErr := errors.New("git error")
+			err := classifyCloneError(tc.output, originalErr, "https://example.com/repo", 30*time.Second)
+
+			var repoErr *RepoError
+			if !errors.As(err, &repoErr) {
+				t.Fatalf("Expected RepoError, got %T", err)
+			}
+
+			if tc.expectedType == nil {
+				// Should fall back to original error
+				if repoErr.Type != originalErr {
+					t.Errorf("Expected original error as type for %q, got %v", tc.name, repoErr.Type)
+				}
+			} else {
+				if !errors.Is(repoErr.Type, tc.expectedType) {
+					t.Errorf("Expected error type %v for %q, got %v", tc.expectedType, tc.name, repoErr.Type)
+				}
+			}
+		})
+	}
+}
+
+// TestAllErrorSentinels verifies all error sentinels are distinct
+func TestAllErrorSentinels(t *testing.T) {
+	sentinels := []error{
+		ErrRepoNotFound,
+		ErrRepoPrivate,
+		ErrNetworkError,
+		ErrInvalidURL,
+		ErrCloneTimeout,
+		ErrRepoTooLarge,
+		ErrRateLimited,
+	}
+
+	// Check that all sentinels have messages
+	for _, sentinel := range sentinels {
+		if sentinel.Error() == "" {
+			t.Errorf("Sentinel %v has empty error message", sentinel)
+		}
+	}
+
+	// Check that all sentinels are distinct
+	for i, a := range sentinels {
+		for j, b := range sentinels {
+			if i != j && errors.Is(a, b) {
+				t.Errorf("Sentinels %v and %v are not distinct", a, b)
+			}
+		}
+	}
+}
+
+// TestRepoErrorWithAllTypes tests RepoError with each sentinel type
+func TestRepoErrorWithAllTypes(t *testing.T) {
+	sentinels := []error{
+		ErrRepoNotFound,
+		ErrRepoPrivate,
+		ErrNetworkError,
+		ErrInvalidURL,
+		ErrCloneTimeout,
+		ErrRepoTooLarge,
+		ErrRateLimited,
+	}
+
+	for _, sentinel := range sentinels {
+		t.Run(sentinel.Error(), func(t *testing.T) {
+			repoErr := &RepoError{
+				Type:    sentinel,
+				Message: "test message for " + sentinel.Error(),
+				Details: "details",
+			}
+
+			// errors.Is should work through Unwrap
+			if !errors.Is(repoErr, sentinel) {
+				t.Errorf("errors.Is failed for %v", sentinel)
+			}
+
+			// errors.As should work
+			var target *RepoError
+			if !errors.As(repoErr, &target) {
+				t.Errorf("errors.As failed for %v", sentinel)
+			}
+
+			if target.Type != sentinel {
+				t.Errorf("Type mismatch after errors.As: got %v, want %v", target.Type, sentinel)
+			}
+		})
+	}
+}
