@@ -104,6 +104,8 @@ type Result struct {
 	ScanLevel        ScanLevel // Scan level used
 	CachedFileCount  int       // Number of files reused from cache
 	ScannedFileCount int       // Number of files actually scanned
+	IsPartial        bool      // True if scan timed out with partial results
+	PartialReason    string    // Why partial: "timeout", "cancelled", etc.
 }
 
 // SecurityScoreWeights defines point deductions per severity level
@@ -359,6 +361,24 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 
 	// Check for timeout/cancellation first, before checking exit codes
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
+		// Try to salvage partial results from what was scanned before timeout
+		log.Printf("[scanner] Scan timed out after %v, attempting to parse partial results...", s.timeout)
+
+		if len(jsonOutput.String()) > 0 {
+			partialResult, parseErr := parseSARIFOutput(jsonOutput.String(), totalFiles, startTime)
+			if parseErr == nil && len(partialResult.Findings) > 0 {
+				// We got partial results! Return them with warning
+				partialResult.ScannerUsed = s.binaryPath
+				partialResult.ScanLevel = s.scanLevel
+				partialResult.IsPartial = true
+				partialResult.PartialReason = fmt.Sprintf("timeout after %v", s.timeout)
+				log.Printf("[scanner] Partial results recovered: %d findings from %d files (timeout)",
+					len(partialResult.Findings), partialResult.FilesScanned)
+				return partialResult, nil
+			}
+		}
+
+		// No partial results available, return timeout error
 		return nil, fmt.Errorf("scan timed out after %v", s.timeout)
 	}
 

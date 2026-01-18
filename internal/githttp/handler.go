@@ -435,7 +435,22 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 		return
 	}
 
-	if err != nil {
+	// Check for partial results (scan timeout but with recoverable data)
+	if scanResult != nil && scanResult.IsPartial {
+		// We have partial results - show warning but continue to display them
+		if h.metrics != nil {
+			h.metrics.ScanErrors.Add(1) // Still count as error for metrics
+		}
+		sb.WriteEmptyLine()
+		report.WriteBoxTop(boxWidth)
+		report.WriteBoxLine(sb.Color(Yellow, "⚠  WARNING: PARTIAL RESULTS"), boxWidth)
+		report.WriteBoxLine(fmt.Sprintf("Scan %s", scanResult.PartialReason), boxWidth)
+		report.WriteBoxLine(fmt.Sprintf("Showing findings from scanned files"), boxWidth)
+		report.WriteBoxBottom(boxWidth)
+		sb.WriteEmptyLine()
+		// Continue to display partial results below
+	} else if err != nil {
+		// Complete failure with no results
 		if h.metrics != nil {
 			h.metrics.ScanErrors.Add(1)
 		}
@@ -471,6 +486,8 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 		ScanLevel:        string(scanResult.ScanLevel),
 		CachedFileCount:  scanResult.CachedFileCount,
 		ScannedFileCount: scanResult.ScannedFileCount,
+		IsPartial:        scanResult.IsPartial,
+		PartialReason:    scanResult.PartialReason,
 	}
 	h.db.CreateScan(dbScan)
 

@@ -106,6 +106,17 @@ func (db *DB) runMigrations() error {
 		return err
 	}
 
+	// Add partial scan tracking columns
+	_, err = db.conn.Exec(`ALTER TABLE scans ADD COLUMN is_partial BOOLEAN DEFAULT FALSE`)
+	if err != nil && !isColumnExistsError(err) {
+		return err
+	}
+
+	_, err = db.conn.Exec(`ALTER TABLE scans ADD COLUMN partial_reason TEXT`)
+	if err != nil && !isColumnExistsError(err) {
+		return err
+	}
+
 	return nil
 }
 
@@ -158,6 +169,8 @@ type Scan struct {
 	ScanLevel        string // 'quick', 'normal', 'thorough'
 	CachedFileCount  int    // Number of files reused from cache
 	ScannedFileCount int    // Number of files actually scanned
+	IsPartial        bool   // True if scan timed out with partial results
+	PartialReason    string // Why partial: "timeout after 3m", etc.
 	CreatedAt        time.Time
 }
 
@@ -257,19 +270,21 @@ func (db *DB) GetScanByRepoAndCommit(repoID int64, commitSHA string) (*Scan, err
 		       critical_count, high_count, medium_count, low_count, info_count,
 		       COALESCE(security_score, 100), files_scanned, scan_duration_ms,
 		       opengrep_version, rules_version, created_at,
-		       COALESCE(scan_level, 'normal'), COALESCE(cached_file_count, 0), COALESCE(scanned_file_count, 0)
+		       COALESCE(scan_level, 'normal'), COALESCE(cached_file_count, 0), COALESCE(scanned_file_count, 0),
+		       COALESCE(is_partial, FALSE), partial_reason
 		FROM scans WHERE repo_id = ? AND commit_sha = ?
 	`, repoID, commitSHA)
 
 	var s Scan
 	var summaryJSON sql.NullString
 	var filesScanned sql.NullInt64
-	var openGrepVer, rulesVer sql.NullString
+	var openGrepVer, rulesVer, partialReason sql.NullString
 
 	err := row.Scan(&s.ID, &s.RepoID, &s.CommitSHA, &s.ResultsJSON, &summaryJSON,
 		&s.CriticalCount, &s.HighCount, &s.MediumCount, &s.LowCount, &s.InfoCount,
 		&s.SecurityScore, &filesScanned, &s.ScanDurationMS, &openGrepVer, &rulesVer, &s.CreatedAt,
-		&s.ScanLevel, &s.CachedFileCount, &s.ScannedFileCount)
+		&s.ScanLevel, &s.CachedFileCount, &s.ScannedFileCount,
+		&s.IsPartial, &partialReason)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -281,6 +296,7 @@ func (db *DB) GetScanByRepoAndCommit(repoID int64, commitSHA string) (*Scan, err
 	s.FilesScanned = int(filesScanned.Int64)
 	s.OpenGrepVersion = openGrepVer.String
 	s.RulesVersion = rulesVer.String
+	s.PartialReason = partialReason.String
 
 	return &s, nil
 }
@@ -291,12 +307,14 @@ func (db *DB) CreateScan(scan *Scan) error {
 		INSERT INTO scans (repo_id, commit_sha, results_json, summary_json,
 		                   critical_count, high_count, medium_count, low_count, info_count,
 		                   security_score, files_scanned, scan_duration_ms, opengrep_version, rules_version,
-		                   scan_level, cached_file_count, scanned_file_count)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                   scan_level, cached_file_count, scanned_file_count,
+		                   is_partial, partial_reason)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, scan.RepoID, scan.CommitSHA, scan.ResultsJSON, scan.SummaryJSON,
 		scan.CriticalCount, scan.HighCount, scan.MediumCount, scan.LowCount, scan.InfoCount,
 		scan.SecurityScore, scan.FilesScanned, scan.ScanDurationMS, scan.OpenGrepVersion, scan.RulesVersion,
-		scan.ScanLevel, scan.CachedFileCount, scan.ScannedFileCount)
+		scan.ScanLevel, scan.CachedFileCount, scan.ScannedFileCount,
+		scan.IsPartial, nullString(scan.PartialReason))
 	if err != nil {
 		return err
 	}

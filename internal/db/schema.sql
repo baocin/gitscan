@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS scans (
     scan_duration_ms INTEGER,
     opengrep_version TEXT,
     rules_version TEXT,
+    is_partial BOOLEAN DEFAULT FALSE,      -- True if scan timed out with partial results
+    partial_reason TEXT,                   -- Why partial: "timeout after 3m", etc.
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(repo_id, commit_sha)
 );
