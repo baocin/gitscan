@@ -81,7 +81,7 @@ jobs:
 
           # Run scanner and capture output
           echo "Running opengrep scanner..."
-          opengrep --config auto --json --metrics=off /tmp/test-repo > /tmp/scan-results.json 2>&1 || true
+          opengrep scan --config auto --sarif /tmp/test-repo > /tmp/scan-results.json 2>&1 || true
 
           # Show results
           echo "=== Scan Results ==="
