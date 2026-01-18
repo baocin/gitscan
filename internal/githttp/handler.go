@@ -11,6 +11,7 @@ import (
 
 	"github.com/baocin/gitscan/internal/cache"
 	"github.com/baocin/gitscan/internal/db"
+	"github.com/baocin/gitscan/internal/metrics"
 	"github.com/baocin/gitscan/internal/preflight"
 	"github.com/baocin/gitscan/internal/queue"
 	"github.com/baocin/gitscan/internal/ratelimit"
@@ -41,12 +42,13 @@ type Handler struct {
 	limiter   *ratelimit.Limiter
 	preflight *preflight.Checker
 	queue     *queue.Manager
+	metrics   *metrics.Metrics
 	config    Config
 	useColors bool
 }
 
 // NewHandler creates a new git HTTP handler
-func NewHandler(database *db.DB, repoCache *cache.RepoCache, scan *scanner.Scanner, limiter *ratelimit.Limiter, pf *preflight.Checker, q *queue.Manager, config Config) *Handler {
+func NewHandler(database *db.DB, repoCache *cache.RepoCache, scan *scanner.Scanner, limiter *ratelimit.Limiter, pf *preflight.Checker, q *queue.Manager, m *metrics.Metrics, config Config) *Handler {
 	return &Handler{
 		db:        database,
 		cache:     repoCache,
@@ -54,9 +56,15 @@ func NewHandler(database *db.DB, repoCache *cache.RepoCache, scan *scanner.Scann
 		limiter:   limiter,
 		preflight: pf,
 		queue:     q,
+		metrics:   m,
 		config:    config,
 		useColors: true, // Default to colors
 	}
+}
+
+// GetMetrics returns the metrics instance for external access (e.g., /metrics endpoint)
+func (h *Handler) GetMetrics() *metrics.Metrics {
+	return h.metrics
 }
 
 // ServeHTTP implements http.Handler
@@ -249,6 +257,17 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	report := NewReportWriter(sb)
 	boxWidth := 80
 
+	// Track scan metrics - this returns a done callback
+	var scanDone func()
+	if h.metrics != nil {
+		scanDone = h.metrics.ScanStarted()
+		defer func() {
+			if scanDone != nil {
+				scanDone()
+			}
+		}()
+	}
+
 	sb.WriteEmptyLine()
 
 	// Step 0: Preflight checks (disk space only, no API calls)
@@ -281,6 +300,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 
 	// Use full path as cache key, and construct proper clone URL
 	cloneURL := parsed.GetCloneURL()
+	cloneStart := time.Now()
 	repo, err := h.cache.FetchRepo(ctx, parsed.FullPath, cloneURL, func(progress string) {
 		// Check for disconnect during fetch
 		if checkClientDisconnected(ctx) {
@@ -289,6 +309,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		frame++
 		// Don't show individual progress messages - keep output clean
 	})
+	cloneDuration := time.Since(cloneStart)
 
 	// Check if cancelled during fetch
 	if checkClientDisconnected(ctx) {
@@ -297,8 +318,16 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	}
 
 	if err != nil {
+		if h.metrics != nil {
+			h.metrics.CloneErrors.Add(1)
+		}
 		h.writeFetchError(sb, report, parsed, err, boxWidth)
 		return
+	}
+
+	// Record clone time on success
+	if h.metrics != nil {
+		h.metrics.RecordCloneTime(cloneDuration)
 	}
 
 	sb.WriteProgressf("%s [git.vet] Repository fetched", IconSuccess)
@@ -315,9 +344,16 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	if !skipCache {
 		cachedScan, err := h.db.GetScanByRepoAndCommit(repo.ID, repo.LastCommitSHA)
 		if err == nil && cachedScan != nil {
+			if h.metrics != nil {
+				h.metrics.CacheHits.Add(1)
+			}
 			sb.WriteProgressf("%s [git.vet] Using cached scan results", IconSuccess)
 			h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true)
 			return
+		}
+		// Cache miss - record it
+		if h.metrics != nil {
+			h.metrics.CacheMisses.Add(1)
 		}
 	} else {
 		sb.WriteProgressf("%s [git.vet] Cache bypass enabled - forcing fresh scan", IconSuccess)
@@ -331,6 +367,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	// Step 3: Run scan
 	sb.WriteProgressf("%s [git.vet] Scanning for vulnerabilities...", SpinnerFrames[frame%len(SpinnerFrames)])
 
+	scanStart := time.Now()
 	scanResult, err := h.scanner.Scan(ctx, repo.LocalPath, func(progress scanner.Progress) {
 		// Check for disconnect during scan
 		if checkClientDisconnected(ctx) {
@@ -339,6 +376,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		frame++
 		sb.WriteProgressf("%s [git.vet] Scanning for vulnerabilities...", SpinnerFrames[frame%len(SpinnerFrames)])
 	})
+	scanDuration := time.Since(scanStart)
 
 	// Check if cancelled during scan
 	if checkClientDisconnected(ctx) {
@@ -346,6 +384,9 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	}
 
 	if err != nil {
+		if h.metrics != nil {
+			h.metrics.ScanErrors.Add(1)
+		}
 		sb.WriteEmptyLine()
 		report.WriteBoxTop(boxWidth)
 		report.WriteBoxLine(sb.Color(Red, "ERROR: Scan failed"), boxWidth)
@@ -353,6 +394,11 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		report.WriteBoxBottom(boxWidth)
 		sb.WriteEmptyLine()
 		return
+	}
+
+	// Record scan time on success
+	if h.metrics != nil {
+		h.metrics.RecordScanTime(scanDuration)
 	}
 
 	sb.WriteProgressf("%s [git.vet] Scan complete!", IconSuccess)

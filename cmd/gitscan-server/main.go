@@ -15,6 +15,7 @@ import (
 	"github.com/baocin/gitscan/internal/cache"
 	"github.com/baocin/gitscan/internal/db"
 	"github.com/baocin/gitscan/internal/githttp"
+	"github.com/baocin/gitscan/internal/metrics"
 	"github.com/baocin/gitscan/internal/preflight"
 	"github.com/baocin/gitscan/internal/queue"
 	"github.com/baocin/gitscan/internal/ratelimit"
@@ -96,9 +97,13 @@ func main() {
 	queueManager := queue.NewManager(queueCfg)
 	log.Printf("Queue: %d public slots, %d private slots", queueCfg.MaxConcurrentPublic, queueCfg.MaxConcurrentPrivate)
 
+	// Initialize metrics
+	metricsCollector := metrics.New()
+	log.Printf("Metrics collector initialized")
+
 	// Create git HTTP handler
 	handlerCfg := githttp.DefaultConfig()
-	gitHandler := githttp.NewHandler(database, repoCache, scan, limiter, preflightChecker, queueManager, handlerCfg)
+	gitHandler := githttp.NewHandler(database, repoCache, scan, limiter, preflightChecker, queueManager, metricsCollector, handlerCfg)
 
 	// Create web handler for marketing pages
 	webHandler, err := web.NewHandler(database)
@@ -119,6 +124,17 @@ func main() {
 	mux.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"version":"%s","build_time":"%s","git_commit":"%s"}`, Version, BuildTime, GitCommit)
+	})
+
+	// Metrics endpoint
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		data, err := metricsCollector.JSON()
+		if err != nil {
+			http.Error(w, "Failed to encode metrics", http.StatusInternalServerError)
+			return
+		}
+		w.Write(data)
 	})
 
 	// Static files
