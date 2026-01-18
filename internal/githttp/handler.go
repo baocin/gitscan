@@ -257,6 +257,23 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	report := NewReportWriter(sb)
 	boxWidth := 80
 
+	// Initialize request log - will be filled in as we progress
+	reqLog := &db.Request{
+		IP:          clientIP,
+		UserAgent:   "", // Could be extracted from HTTP headers if needed
+		RepoURL:     parsed.FullPath,
+		RequestMode: parsed.Mode,
+		CacheHit:    false,
+	}
+
+	// Ensure we always log the request, even on errors or early returns
+	defer func() {
+		reqLog.ResponseTimeMS = time.Since(startTime).Milliseconds()
+		if err := h.db.LogRequest(reqLog); err != nil {
+			// Log error but don't fail the request
+		}
+	}()
+
 	// Track scan metrics - this returns a done callback
 	var scanDone func()
 	if h.metrics != nil {
@@ -277,6 +294,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		// Check disk space
 		available, ok, err := h.preflight.CheckDiskSpace(h.cache.GetCacheDir())
 		if err == nil && !ok {
+			reqLog.Error = "server disk space low"
 			sb.WriteEmptyLine()
 			report.WriteBoxTop(boxWidth)
 			report.WriteBoxLine(sb.Color(Red, "ERROR: Server disk space low"), boxWidth)
@@ -291,6 +309,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 
 	// Check for client disconnect before starting heavy work
 	if checkClientDisconnected(ctx) {
+		reqLog.Error = "client disconnected"
 		return // Client cancelled, abort silently
 	}
 
@@ -313,6 +332,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 
 	// Check if cancelled during fetch
 	if checkClientDisconnected(ctx) {
+		reqLog.Error = "client disconnected during fetch"
 		// Clean up partial clone if needed
 		return
 	}
@@ -321,6 +341,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		if h.metrics != nil {
 			h.metrics.CloneErrors.Add(1)
 		}
+		reqLog.Error = fmt.Sprintf("fetch error: %v", err)
 		h.writeFetchError(sb, report, parsed, err, boxWidth)
 		return
 	}
@@ -340,6 +361,9 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		}
 	}()
 
+	// Update request log with repo info now that we have it
+	reqLog.CommitSHA = repo.LastCommitSHA
+
 	// Step 2: Check for cached scan (unless skipCache is set)
 	if !skipCache {
 		cachedScan, err := h.db.GetScanByRepoAndCommit(repo.ID, repo.LastCommitSHA)
@@ -347,6 +371,8 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 			if h.metrics != nil {
 				h.metrics.CacheHits.Add(1)
 			}
+			reqLog.CacheHit = true
+			reqLog.ScanID = &cachedScan.ID
 			sb.WriteProgressf("%s [git.vet] Using cached scan results", IconSuccess)
 			h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true)
 			return
@@ -361,6 +387,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 
 	// Check for client disconnect before scanning
 	if checkClientDisconnected(ctx) {
+		reqLog.Error = "client disconnected before scan"
 		return
 	}
 
@@ -380,6 +407,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 
 	// Check if cancelled during scan
 	if checkClientDisconnected(ctx) {
+		reqLog.Error = "client disconnected during scan"
 		return
 	}
 
@@ -387,6 +415,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		if h.metrics != nil {
 			h.metrics.ScanErrors.Add(1)
 		}
+		reqLog.Error = fmt.Sprintf("scan error: %v", err)
 		sb.WriteEmptyLine()
 		report.WriteBoxTop(boxWidth)
 		report.WriteBoxLine(sb.Color(Red, "ERROR: Scan failed"), boxWidth)
@@ -419,20 +448,11 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	}
 	h.db.CreateScan(dbScan)
 
+	// Update request log with successful scan ID
+	reqLog.ScanID = &dbScan.ID
+
 	// Step 5: Write report
 	h.writeScanReport(sb, report, parsed, repo, dbScan, boxWidth, false)
-
-	// Log request
-	responseTime := time.Since(startTime)
-	h.db.LogRequest(&db.Request{
-		IP:             clientIP,
-		RepoURL:        parsed.FullPath,
-		CommitSHA:      repo.LastCommitSHA,
-		RequestMode:    parsed.Mode,
-		ScanID:         &dbScan.ID,
-		CacheHit:       false,
-		ResponseTimeMS: responseTime.Milliseconds(),
-	})
 }
 
 // writeScanReport writes the formatted scan report via sideband

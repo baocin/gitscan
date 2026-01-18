@@ -101,14 +101,23 @@ type GitRequest struct {
 	Done        bool
 }
 
+// CloneProtocol specifies the git clone protocol
+type CloneProtocol string
+
+const (
+	ProtocolHTTPS CloneProtocol = "https"
+	ProtocolSSH   CloneProtocol = "ssh"
+)
+
 // ParsedPath contains parsed URL components
 type ParsedPath struct {
-	Mode     string // scan, clone, json, plain
-	Host     string // github.com, gitlab.com, etc.
-	Owner    string // repository owner
-	Repo     string // repository name
-	RepoPath string // owner/repo (for convenience)
-	FullPath string // host/owner/repo
+	Mode     string        // scan, clone, json, plain
+	Host     string        // github.com, gitlab.com, etc.
+	Owner    string        // repository owner
+	Repo     string        // repository name
+	RepoPath string        // owner/repo (for convenience)
+	FullPath string        // host/owner/repo
+	Protocol CloneProtocol // https or ssh (defaults to https)
 }
 
 // Supported git hosts
@@ -159,22 +168,39 @@ func ParseRepoPathFull(urlPath string) (*ParsedPath, error) {
 
 	parts := strings.Split(path, "/")
 
-	// Check for mode prefix
+	// Check for mode prefix (supports both mode and protocol prefixes)
 	validModes := map[string]bool{
 		"scan":  true,
 		"clone": true,
 		"json":  true,
 		"plain": true,
+		"ssh":   true, // SSH protocol prefix
 	}
 
 	parsed := &ParsedPath{
-		Mode: "scan", // Default mode
+		Mode:     "scan",          // Default mode
+		Protocol: ProtocolHTTPS,   // Default protocol
 	}
 
 	startIdx := 0
 	if len(parts) > 0 && validModes[parts[0]] {
-		parsed.Mode = parts[0]
-		startIdx = 1
+		if parts[0] == "ssh" {
+			parsed.Protocol = ProtocolSSH
+			// SSH can be combined with a mode: /ssh/json/github.com/...
+			startIdx = 1
+			if len(parts) > 1 && validModes[parts[1]] && parts[1] != "ssh" {
+				parsed.Mode = parts[1]
+				startIdx = 2
+			}
+		} else {
+			parsed.Mode = parts[0]
+			startIdx = 1
+			// Mode can be combined with SSH: /clone/ssh/github.com/...
+			if len(parts) > 1 && parts[1] == "ssh" {
+				parsed.Protocol = ProtocolSSH
+				startIdx = 2
+			}
+		}
 	}
 
 	// Remaining parts should be: host/owner/repo[/...]
@@ -211,8 +237,22 @@ func ParseRepoPathFull(urlPath string) (*ParsedPath, error) {
 }
 
 // GetCloneURL returns the actual git clone URL for the parsed path
+// Uses the protocol specified in the ParsedPath (defaults to HTTPS)
 func (p *ParsedPath) GetCloneURL() string {
+	if p.Protocol == ProtocolSSH {
+		return p.GetSSHCloneURL()
+	}
+	return p.GetHTTPSCloneURL()
+}
+
+// GetHTTPSCloneURL returns the HTTPS clone URL for the parsed path
+func (p *ParsedPath) GetHTTPSCloneURL() string {
 	return fmt.Sprintf("https://%s/%s/%s.git", p.Host, p.Owner, p.Repo)
+}
+
+// GetSSHCloneURL returns the SSH clone URL for the parsed path
+func (p *ParsedPath) GetSSHCloneURL() string {
+	return fmt.Sprintf("git@%s:%s/%s.git", p.Host, p.Owner, p.Repo)
 }
 
 // GetAPIURL returns the API URL for repo metadata (host-specific)

@@ -280,6 +280,255 @@ func TestParseRepoPath(t *testing.T) {
 	}
 }
 
+// TestSSHProtocolParsing tests parsing of SSH protocol prefixes in URL paths
+func TestSSHProtocolParsing(t *testing.T) {
+	tests := []struct {
+		name         string
+		urlPath      string
+		wantHost     string
+		wantOwner    string
+		wantRepo     string
+		wantMode     string
+		wantProtocol CloneProtocol
+		wantErr      bool
+	}{
+		{
+			name:         "ssh prefix alone",
+			urlPath:      "/ssh/github.com/user/repo/info/refs",
+			wantHost:     "github.com",
+			wantOwner:    "user",
+			wantRepo:     "repo",
+			wantMode:     "scan",
+			wantProtocol: ProtocolSSH,
+		},
+		{
+			name:         "ssh prefix with mode (ssh/json)",
+			urlPath:      "/ssh/json/github.com/user/repo/info/refs",
+			wantHost:     "github.com",
+			wantOwner:    "user",
+			wantRepo:     "repo",
+			wantMode:     "json",
+			wantProtocol: ProtocolSSH,
+		},
+		{
+			name:         "ssh prefix with clone mode (ssh/clone)",
+			urlPath:      "/ssh/clone/github.com/user/repo/info/refs",
+			wantHost:     "github.com",
+			wantOwner:    "user",
+			wantRepo:     "repo",
+			wantMode:     "clone",
+			wantProtocol: ProtocolSSH,
+		},
+		{
+			name:         "mode before ssh (clone/ssh)",
+			urlPath:      "/clone/ssh/github.com/user/repo/info/refs",
+			wantHost:     "github.com",
+			wantOwner:    "user",
+			wantRepo:     "repo",
+			wantMode:     "clone",
+			wantProtocol: ProtocolSSH,
+		},
+		{
+			name:         "json/ssh combo",
+			urlPath:      "/json/ssh/github.com/user/repo/info/refs",
+			wantHost:     "github.com",
+			wantOwner:    "user",
+			wantRepo:     "repo",
+			wantMode:     "json",
+			wantProtocol: ProtocolSSH,
+		},
+		{
+			name:         "plain/ssh combo",
+			urlPath:      "/plain/ssh/github.com/user/repo/info/refs",
+			wantHost:     "github.com",
+			wantOwner:    "user",
+			wantRepo:     "repo",
+			wantMode:     "plain",
+			wantProtocol: ProtocolSSH,
+		},
+		{
+			name:         "https by default (no ssh prefix)",
+			urlPath:      "/github.com/user/repo/info/refs",
+			wantHost:     "github.com",
+			wantOwner:    "user",
+			wantRepo:     "repo",
+			wantMode:     "scan",
+			wantProtocol: ProtocolHTTPS,
+		},
+		{
+			name:         "https with mode prefix",
+			urlPath:      "/json/github.com/user/repo/info/refs",
+			wantHost:     "github.com",
+			wantOwner:    "user",
+			wantRepo:     "repo",
+			wantMode:     "json",
+			wantProtocol: ProtocolHTTPS,
+		},
+		{
+			name:         "ssh with gitlab",
+			urlPath:      "/ssh/gitlab.com/org/project/info/refs",
+			wantHost:     "gitlab.com",
+			wantOwner:    "org",
+			wantRepo:     "project",
+			wantMode:     "scan",
+			wantProtocol: ProtocolSSH,
+		},
+		{
+			name:         "ssh with bitbucket",
+			urlPath:      "/ssh/bitbucket.org/team/repo/info/refs",
+			wantHost:     "bitbucket.org",
+			wantOwner:    "team",
+			wantRepo:     "repo",
+			wantMode:     "scan",
+			wantProtocol: ProtocolSSH,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, err := ParseRepoPathFull(tt.urlPath)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ParseRepoPathFull() expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("ParseRepoPathFull() unexpected error: %v", err)
+				return
+			}
+
+			if parsed.Host != tt.wantHost {
+				t.Errorf("ParseRepoPathFull() Host = %q, want %q", parsed.Host, tt.wantHost)
+			}
+			if parsed.Owner != tt.wantOwner {
+				t.Errorf("ParseRepoPathFull() Owner = %q, want %q", parsed.Owner, tt.wantOwner)
+			}
+			if parsed.Repo != tt.wantRepo {
+				t.Errorf("ParseRepoPathFull() Repo = %q, want %q", parsed.Repo, tt.wantRepo)
+			}
+			if parsed.Mode != tt.wantMode {
+				t.Errorf("ParseRepoPathFull() Mode = %q, want %q", parsed.Mode, tt.wantMode)
+			}
+			if parsed.Protocol != tt.wantProtocol {
+				t.Errorf("ParseRepoPathFull() Protocol = %q, want %q", parsed.Protocol, tt.wantProtocol)
+			}
+		})
+	}
+}
+
+// TestGetSSHCloneURL tests SSH clone URL generation
+func TestGetSSHCloneURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		urlPath     string
+		wantSSHURL  string
+		wantHTTPURL string
+	}{
+		{
+			name:        "github repo",
+			urlPath:     "/ssh/github.com/user/repo/info/refs",
+			wantSSHURL:  "git@github.com:user/repo.git",
+			wantHTTPURL: "https://github.com/user/repo.git",
+		},
+		{
+			name:        "gitlab repo",
+			urlPath:     "/ssh/gitlab.com/org/project/info/refs",
+			wantSSHURL:  "git@gitlab.com:org/project.git",
+			wantHTTPURL: "https://gitlab.com/org/project.git",
+		},
+		{
+			name:        "bitbucket repo",
+			urlPath:     "/ssh/bitbucket.org/team/repo/info/refs",
+			wantSSHURL:  "git@bitbucket.org:team/repo.git",
+			wantHTTPURL: "https://bitbucket.org/team/repo.git",
+		},
+		{
+			name:        "repo with hyphen",
+			urlPath:     "/ssh/github.com/facebook/create-react-app/info/refs",
+			wantSSHURL:  "git@github.com:facebook/create-react-app.git",
+			wantHTTPURL: "https://github.com/facebook/create-react-app.git",
+		},
+		{
+			name:        "repo with dots",
+			urlPath:     "/ssh/github.com/user/repo.js/info/refs",
+			wantSSHURL:  "git@github.com:user/repo.js.git",
+			wantHTTPURL: "https://github.com/user/repo.js.git",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, err := ParseRepoPathFull(tt.urlPath)
+			if err != nil {
+				t.Fatalf("ParseRepoPathFull() failed: %v", err)
+			}
+
+			gotSSH := parsed.GetSSHCloneURL()
+			if gotSSH != tt.wantSSHURL {
+				t.Errorf("GetSSHCloneURL() = %q, want %q", gotSSH, tt.wantSSHURL)
+			}
+
+			gotHTTPS := parsed.GetHTTPSCloneURL()
+			if gotHTTPS != tt.wantHTTPURL {
+				t.Errorf("GetHTTPSCloneURL() = %q, want %q", gotHTTPS, tt.wantHTTPURL)
+			}
+
+			// Verify GetCloneURL returns SSH URL when protocol is SSH
+			gotClone := parsed.GetCloneURL()
+			if gotClone != tt.wantSSHURL {
+				t.Errorf("GetCloneURL() with SSH protocol = %q, want %q", gotClone, tt.wantSSHURL)
+			}
+		})
+	}
+}
+
+// TestGetCloneURLProtocolSelection tests that GetCloneURL respects the protocol setting
+func TestGetCloneURLProtocolSelection(t *testing.T) {
+	tests := []struct {
+		name    string
+		urlPath string
+		wantURL string
+	}{
+		{
+			name:    "default protocol (HTTPS)",
+			urlPath: "/github.com/user/repo/info/refs",
+			wantURL: "https://github.com/user/repo.git",
+		},
+		{
+			name:    "explicit SSH protocol",
+			urlPath: "/ssh/github.com/user/repo/info/refs",
+			wantURL: "git@github.com:user/repo.git",
+		},
+		{
+			name:    "SSH with mode prefix",
+			urlPath: "/clone/ssh/github.com/user/repo/info/refs",
+			wantURL: "git@github.com:user/repo.git",
+		},
+		{
+			name:    "mode only (HTTPS)",
+			urlPath: "/clone/github.com/user/repo/info/refs",
+			wantURL: "https://github.com/user/repo.git",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, err := ParseRepoPathFull(tt.urlPath)
+			if err != nil {
+				t.Fatalf("ParseRepoPathFull() failed: %v", err)
+			}
+
+			gotURL := parsed.GetCloneURL()
+			if gotURL != tt.wantURL {
+				t.Errorf("GetCloneURL() = %q, want %q", gotURL, tt.wantURL)
+			}
+		})
+	}
+}
+
 // contains checks if substr is in s
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
