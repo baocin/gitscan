@@ -119,6 +119,72 @@
             font-size: 0.85rem;
         }
 
+        .score-display {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .score-circle {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 4px solid;
+            margin-bottom: 8px;
+        }
+
+        .score-circle.score-a {
+            border-color: var(--green);
+            background: rgba(63, 185, 80, 0.1);
+        }
+
+        .score-circle.score-b {
+            border-color: var(--yellow);
+            background: rgba(210, 153, 34, 0.1);
+        }
+
+        .score-circle.score-c {
+            border-color: var(--orange);
+            background: rgba(219, 109, 40, 0.1);
+        }
+
+        .score-circle.score-f {
+            border-color: var(--red);
+            background: rgba(248, 81, 73, 0.1);
+        }
+
+        .score-value {
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .score-circle.score-a .score-value { color: var(--green); }
+        .score-circle.score-b .score-value { color: var(--yellow); }
+        .score-circle.score-c .score-value { color: var(--orange); }
+        .score-circle.score-f .score-value { color: var(--red); }
+
+        .score-grade {
+            font-size: 1rem;
+            font-weight: 600;
+            opacity: 0.8;
+        }
+
+        .score-circle.score-a .score-grade { color: var(--green); }
+        .score-circle.score-b .score-grade { color: var(--yellow); }
+        .score-circle.score-c .score-grade { color: var(--orange); }
+        .score-circle.score-f .score-grade { color: var(--red); }
+
+        .score-label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
         .summary-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -387,6 +453,14 @@
                     <span>Scanned: {{.ScannedAt}}</span>
                     <span>{{.FilesScanned}} files in {{.ScanDuration}}</span>
                 </div>
+            </div>
+
+            <div class="score-display">
+                <div class="score-circle {{if ge .SecurityScore 90}}score-a{{else if ge .SecurityScore 70}}score-b{{else if ge .SecurityScore 50}}score-c{{else}}score-f{{end}}">
+                    <span class="score-value">{{.SecurityScore}}</span>
+                    <span class="score-grade">{{.SecurityGrade}}</span>
+                </div>
+                <div class="score-label">Security Score</div>
             </div>
 
             <div class="summary-grid">

@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS scans (
     medium_count INTEGER DEFAULT 0,
     low_count INTEGER DEFAULT 0,
     info_count INTEGER DEFAULT 0,
+    security_score INTEGER DEFAULT 100,    -- 0-100 weighted security score
     files_scanned INTEGER,
     scan_duration_ms INTEGER,
     opengrep_version TEXT,

@@ -56,12 +56,14 @@ RUN apk add --no-cache \
     musl-dev \
     libffi-dev
 
-# Install opengrep via pip and verify
-RUN pip install --no-cache-dir opengrep || pip install --no-cache-dir semgrep && \
+# Install opengrep via pip with pinned version for consistent SARIF output
+# IMPORTANT: When updating this version, also update:
+# - internal/version/version.go
+# - .github/workflows/test.yml
+ARG OPENGREP_VERSION=1.99.0
+RUN pip install --no-cache-dir "opengrep==${OPENGREP_VERSION}" && \
     echo "=== Checking installed scanner ===" && \
-    (which opengrep && opengrep --version) || \
-    (which semgrep && semgrep --version) || \
-    echo "WARNING: No scanner found in PATH"
+    opengrep --version
 
 # Create non-root user
 RUN addgroup -S gitscan && adduser -S gitscan -G gitscan

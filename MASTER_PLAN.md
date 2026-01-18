@@ -35,6 +35,8 @@ Instead of cloning, they receive a security scan report displayed directly in th
 | GitHub Actions CI | ✅ Done | `.github/workflows/test.yml` |
 | Marketing Homepage | ✅ Done | `web/templates/index.html` |
 | Pricing Page | ✅ Done | `web/templates/pricing.html` |
+| Security Score (0-100) | ✅ Done | `internal/scanner/scanner.go` |
+| Invalid Repo Error Handling | ✅ Done | `internal/cache/cache.go`, `internal/githttp/handler.go` |
 
 ---
 
@@ -170,7 +172,7 @@ cmd := exec.CommandContext(ctx, "git", "clone",
 - [ ] Bitbucket branches and tags
 - [ ] Gitea branches and tags
 - [ ] Self-hosted GitLab instances
-- [ ] Invalid ref handling (graceful error)
+- [x] Invalid ref handling (graceful error) - `internal/cache/cache.go`
 
 ---
 
@@ -1228,7 +1230,7 @@ This would position git.vet as a comprehensive code intelligence platform, not j
 - [ ] GitLab and Bitbucket support
 - [ ] Custom rule upload via web UI
 - [ ] Webhook notifications
-- [ ] Security score (0-100) with severity weighting
+- [x] Security score (0-100) with severity weighting - `internal/scanner/scanner.go`
 
 ### Phase 3
 - [ ] PR comment integration (gitscan as GitHub Action)

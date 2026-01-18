@@ -84,6 +84,47 @@ type Result struct {
 	Duration      time.Duration
 	FindingsJSON  string // JSON array of Finding structs (not raw SARIF)
 	ScannerUsed   string // "opengrep", "semgrep", or "mock"
+	SecurityScore int    // 0-100 score based on severity-weighted findings
+}
+
+// SecurityScoreWeights defines point deductions per severity level
+var SecurityScoreWeights = map[string]int{
+	"critical": 25, // -25 points per critical finding
+	"high":     15, // -15 points per high finding
+	"medium":   5,  // -5 points per medium finding
+	"low":      1,  // -1 point per low finding
+	"info":     0,  // info findings don't affect score
+}
+
+// CalculateSecurityScore computes a 0-100 security score based on findings
+// 100 = perfect (no issues), 0 = critical security concerns
+func CalculateSecurityScore(critical, high, medium, low int) int {
+	score := 100
+	score -= critical * SecurityScoreWeights["critical"]
+	score -= high * SecurityScoreWeights["high"]
+	score -= medium * SecurityScoreWeights["medium"]
+	score -= low * SecurityScoreWeights["low"]
+
+	if score < 0 {
+		score = 0
+	}
+	return score
+}
+
+// ScoreGrade returns a letter grade for the security score
+func ScoreGrade(score int) string {
+	switch {
+	case score >= 90:
+		return "A"
+	case score >= 80:
+		return "B"
+	case score >= 70:
+		return "C"
+	case score >= 60:
+		return "D"
+	default:
+		return "F"
+	}
 }
 
 // Finding represents a single security finding
@@ -372,6 +413,14 @@ func parseSARIFOutput(jsonStr string, totalFiles int, startTime time.Time) (*Res
 	} else {
 		result.FindingsJSON = string(findingsBytes)
 	}
+
+	// Calculate security score
+	result.SecurityScore = CalculateSecurityScore(
+		result.CriticalCount,
+		result.HighCount,
+		result.MediumCount,
+		result.LowCount,
+	)
 
 	return result, nil
 }

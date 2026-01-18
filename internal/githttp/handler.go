@@ -3,6 +3,7 @@ package githttp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/baocin/gitscan/internal/cache"
 	"github.com/baocin/gitscan/internal/db"
+	"github.com/baocin/gitscan/internal/metrics"
 	"github.com/baocin/gitscan/internal/preflight"
 	"github.com/baocin/gitscan/internal/queue"
 	"github.com/baocin/gitscan/internal/ratelimit"
@@ -40,12 +42,13 @@ type Handler struct {
 	limiter   *ratelimit.Limiter
 	preflight *preflight.Checker
 	queue     *queue.Manager
+	metrics   *metrics.Metrics
 	config    Config
 	useColors bool
 }
 
 // NewHandler creates a new git HTTP handler
-func NewHandler(database *db.DB, repoCache *cache.RepoCache, scan *scanner.Scanner, limiter *ratelimit.Limiter, pf *preflight.Checker, q *queue.Manager, config Config) *Handler {
+func NewHandler(database *db.DB, repoCache *cache.RepoCache, scan *scanner.Scanner, limiter *ratelimit.Limiter, pf *preflight.Checker, q *queue.Manager, m *metrics.Metrics, config Config) *Handler {
 	return &Handler{
 		db:        database,
 		cache:     repoCache,
@@ -53,9 +56,15 @@ func NewHandler(database *db.DB, repoCache *cache.RepoCache, scan *scanner.Scann
 		limiter:   limiter,
 		preflight: pf,
 		queue:     q,
+		metrics:   m,
 		config:    config,
 		useColors: true, // Default to colors
 	}
+}
+
+// GetMetrics returns the metrics instance for external access (e.g., /metrics endpoint)
+func (h *Handler) GetMetrics() *metrics.Metrics {
+	return h.metrics
 }
 
 // ServeHTTP implements http.Handler
@@ -248,6 +257,17 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	report := NewReportWriter(sb)
 	boxWidth := 80
 
+	// Track scan metrics - this returns a done callback
+	var scanDone func()
+	if h.metrics != nil {
+		scanDone = h.metrics.ScanStarted()
+		defer func() {
+			if scanDone != nil {
+				scanDone()
+			}
+		}()
+	}
+
 	sb.WriteEmptyLine()
 
 	// Step 0: Preflight checks (disk space only, no API calls)
@@ -280,6 +300,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 
 	// Use full path as cache key, and construct proper clone URL
 	cloneURL := parsed.GetCloneURL()
+	cloneStart := time.Now()
 	repo, err := h.cache.FetchRepo(ctx, parsed.FullPath, cloneURL, func(progress string) {
 		// Check for disconnect during fetch
 		if checkClientDisconnected(ctx) {
@@ -288,6 +309,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		frame++
 		// Don't show individual progress messages - keep output clean
 	})
+	cloneDuration := time.Since(cloneStart)
 
 	// Check if cancelled during fetch
 	if checkClientDisconnected(ctx) {
@@ -296,13 +318,16 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	}
 
 	if err != nil {
-		sb.WriteEmptyLine()
-		report.WriteBoxTop(boxWidth)
-		report.WriteBoxLine(sb.Color(Red, "ERROR: Failed to fetch repository"), boxWidth)
-		report.WriteBoxLine(err.Error(), boxWidth)
-		report.WriteBoxBottom(boxWidth)
-		sb.WriteEmptyLine()
+		if h.metrics != nil {
+			h.metrics.CloneErrors.Add(1)
+		}
+		h.writeFetchError(sb, report, parsed, err, boxWidth)
 		return
+	}
+
+	// Record clone time on success
+	if h.metrics != nil {
+		h.metrics.RecordCloneTime(cloneDuration)
 	}
 
 	sb.WriteProgressf("%s [git.vet] Repository fetched", IconSuccess)
@@ -319,9 +344,16 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	if !skipCache {
 		cachedScan, err := h.db.GetScanByRepoAndCommit(repo.ID, repo.LastCommitSHA)
 		if err == nil && cachedScan != nil {
+			if h.metrics != nil {
+				h.metrics.CacheHits.Add(1)
+			}
 			sb.WriteProgressf("%s [git.vet] Using cached scan results", IconSuccess)
 			h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true)
 			return
+		}
+		// Cache miss - record it
+		if h.metrics != nil {
+			h.metrics.CacheMisses.Add(1)
 		}
 	} else {
 		sb.WriteProgressf("%s [git.vet] Cache bypass enabled - forcing fresh scan", IconSuccess)
@@ -335,6 +367,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	// Step 3: Run scan
 	sb.WriteProgressf("%s [git.vet] Scanning for vulnerabilities...", SpinnerFrames[frame%len(SpinnerFrames)])
 
+	scanStart := time.Now()
 	scanResult, err := h.scanner.Scan(ctx, repo.LocalPath, func(progress scanner.Progress) {
 		// Check for disconnect during scan
 		if checkClientDisconnected(ctx) {
@@ -343,6 +376,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		frame++
 		sb.WriteProgressf("%s [git.vet] Scanning for vulnerabilities...", SpinnerFrames[frame%len(SpinnerFrames)])
 	})
+	scanDuration := time.Since(scanStart)
 
 	// Check if cancelled during scan
 	if checkClientDisconnected(ctx) {
@@ -350,6 +384,9 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 	}
 
 	if err != nil {
+		if h.metrics != nil {
+			h.metrics.ScanErrors.Add(1)
+		}
 		sb.WriteEmptyLine()
 		report.WriteBoxTop(boxWidth)
 		report.WriteBoxLine(sb.Color(Red, "ERROR: Scan failed"), boxWidth)
@@ -357,6 +394,11 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		report.WriteBoxBottom(boxWidth)
 		sb.WriteEmptyLine()
 		return
+	}
+
+	// Record scan time on success
+	if h.metrics != nil {
+		h.metrics.RecordScanTime(scanDuration)
 	}
 
 	sb.WriteProgressf("%s [git.vet] Scan complete!", IconSuccess)
@@ -371,6 +413,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		MediumCount:    scanResult.MediumCount,
 		LowCount:       scanResult.LowCount,
 		InfoCount:      scanResult.InfoCount,
+		SecurityScore:  scanResult.SecurityScore,
 		FilesScanned:   scanResult.FilesScanned,
 		ScanDurationMS: scanResult.Duration.Milliseconds(),
 	}
@@ -408,6 +451,25 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	if cacheHit {
 		report.WriteBoxLine(sb.Color(Cyan, "(cached result)"), width)
 	}
+
+	// Security Score
+	report.WriteBoxMiddle(width)
+	grade := scanner.ScoreGrade(scan.SecurityScore)
+	var scoreColor string
+	switch {
+	case scan.SecurityScore >= 90:
+		scoreColor = Green
+	case scan.SecurityScore >= 70:
+		scoreColor = Yellow
+	case scan.SecurityScore >= 50:
+		scoreColor = Yellow
+	default:
+		scoreColor = Red
+	}
+	scoreLine := fmt.Sprintf("Security Score: %s  %s",
+		sb.Color(scoreColor, fmt.Sprintf("%d/100", scan.SecurityScore)),
+		sb.Color(scoreColor, fmt.Sprintf("(%s)", grade)))
+	report.WriteBoxLine(scoreLine, width)
 
 	// Summary line
 	report.WriteBoxMiddle(width)
@@ -546,6 +608,115 @@ func (h *Handler) writeErrorResponse(w http.ResponseWriter, message string) {
 	sb := NewSidebandWriter(w, true)
 	sb.WriteError(message)
 	sb.Flush()
+}
+
+// writeFetchError writes a user-friendly error message based on the error type
+func (h *Handler) writeFetchError(sb *SidebandWriter, report *ReportWriter, parsed *ParsedPath, err error, boxWidth int) {
+	sb.WriteEmptyLine()
+	report.WriteBoxTop(boxWidth)
+
+	// Check for specific error types from cache package
+	var repoErr *cache.RepoError
+	if errors.As(err, &repoErr) {
+		switch {
+		case errors.Is(repoErr.Type, cache.ErrRepoNotFound):
+			report.WriteBoxLine(sb.Color(Red, "REPOSITORY NOT FOUND"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("The repository could not be found. Please check:", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("  - The repository URL is spelled correctly", boxWidth)
+			report.WriteBoxLine("  - The repository exists on "+parsed.Host, boxWidth)
+			report.WriteBoxLine("  - The repository is public (not private)", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine(sb.Color(Cyan, "Example usage:"), boxWidth)
+			report.WriteBoxLine("  git clone https://git.vet/github.com/owner/repo", boxWidth)
+
+		case errors.Is(repoErr.Type, cache.ErrRepoPrivate):
+			report.WriteBoxLine(sb.Color(Red, "PRIVATE REPOSITORY"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("This repository requires authentication.", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("git.vet can only scan public repositories.", boxWidth)
+			report.WriteBoxLine("For private repository scanning, consider:", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("  - Running opengrep locally on your machine", boxWidth)
+			report.WriteBoxLine("  - Using GitHub's built-in code scanning", boxWidth)
+
+		case errors.Is(repoErr.Type, cache.ErrNetworkError):
+			report.WriteBoxLine(sb.Color(Red, "CONNECTION ERROR"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("Could not connect to "+parsed.Host+".", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("This could be due to:", boxWidth)
+			report.WriteBoxLine("  - Network connectivity issues", boxWidth)
+			report.WriteBoxLine("  - The host being temporarily unavailable", boxWidth)
+			report.WriteBoxLine("  - DNS resolution problems", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("Please verify the URL and try again.", boxWidth)
+
+		case errors.Is(repoErr.Type, cache.ErrInvalidURL):
+			report.WriteBoxLine(sb.Color(Red, "INVALID URL"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("The repository URL format is invalid.", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine(sb.Color(Cyan, "Correct format:"), boxWidth)
+			report.WriteBoxLine("  git clone https://git.vet/<host>/<owner>/<repo>", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine(sb.Color(Cyan, "Examples:"), boxWidth)
+			report.WriteBoxLine("  git clone https://git.vet/github.com/torvalds/linux", boxWidth)
+			report.WriteBoxLine("  git clone https://git.vet/gitlab.com/inkscape/inkscape", boxWidth)
+
+		case errors.Is(repoErr.Type, cache.ErrCloneTimeout):
+			report.WriteBoxLine(sb.Color(Red, "CLONE TIMEOUT"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("The repository took too long to clone.", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("This can happen with:", boxWidth)
+			report.WriteBoxLine("  - Very large repositories", boxWidth)
+			report.WriteBoxLine("  - Slow network connections", boxWidth)
+			report.WriteBoxLine("  - Overloaded git servers", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("Please try again later.", boxWidth)
+
+		case errors.Is(repoErr.Type, cache.ErrRepoTooLarge):
+			report.WriteBoxLine(sb.Color(Red, "REPOSITORY TOO LARGE"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("This repository exceeds the size limit.", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("For large repositories, consider running opengrep", boxWidth)
+			report.WriteBoxLine("locally on your machine instead.", boxWidth)
+
+		case errors.Is(repoErr.Type, cache.ErrRateLimited):
+			report.WriteBoxLine(sb.Color(Yellow, "RATE LIMITED"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine("The git host is rate limiting requests.", boxWidth)
+			report.WriteBoxLine("", boxWidth)
+			report.WriteBoxLine("Please wait a few minutes and try again.", boxWidth)
+
+		default:
+			// Unknown RepoError type
+			report.WriteBoxLine(sb.Color(Red, "FETCH ERROR"), boxWidth)
+			report.WriteBoxMiddle(boxWidth)
+			report.WriteBoxLine(repoErr.Message, boxWidth)
+		}
+	} else {
+		// Generic error (not a RepoError)
+		report.WriteBoxLine(sb.Color(Red, "ERROR"), boxWidth)
+		report.WriteBoxMiddle(boxWidth)
+		report.WriteBoxLine("Failed to fetch repository:", boxWidth)
+		report.WriteBoxLine("", boxWidth)
+		// Truncate long error messages
+		errMsg := err.Error()
+		if len(errMsg) > 60 {
+			errMsg = errMsg[:57] + "..."
+		}
+		report.WriteBoxLine(errMsg, boxWidth)
+	}
+
+	report.WriteBoxMiddle(boxWidth)
+	report.WriteBoxLine(sb.Color(Cyan, "Questions? gitvet@steele.red"), boxWidth)
+	report.WriteBoxBottom(boxWidth)
+	sb.WriteEmptyLine()
 }
 
 // getClientIP extracts the client IP from the request

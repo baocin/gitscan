@@ -95,6 +95,7 @@ type Scan struct {
 	MediumCount     int
 	LowCount        int
 	InfoCount       int
+	SecurityScore   int // 0-100 weighted security score
 	FilesScanned    int
 	ScanDurationMS  int64
 	OpenGrepVersion string
@@ -190,7 +191,8 @@ func (db *DB) GetScanByRepoAndCommit(repoID int64, commitSHA string) (*Scan, err
 	row := db.conn.QueryRow(`
 		SELECT id, repo_id, commit_sha, results_json, summary_json,
 		       critical_count, high_count, medium_count, low_count, info_count,
-		       files_scanned, scan_duration_ms, opengrep_version, rules_version, created_at
+		       COALESCE(security_score, 100), files_scanned, scan_duration_ms,
+		       opengrep_version, rules_version, created_at
 		FROM scans WHERE repo_id = ? AND commit_sha = ?
 	`, repoID, commitSHA)
 
@@ -201,7 +203,7 @@ func (db *DB) GetScanByRepoAndCommit(repoID int64, commitSHA string) (*Scan, err
 
 	err := row.Scan(&s.ID, &s.RepoID, &s.CommitSHA, &s.ResultsJSON, &summaryJSON,
 		&s.CriticalCount, &s.HighCount, &s.MediumCount, &s.LowCount, &s.InfoCount,
-		&filesScanned, &s.ScanDurationMS, &openGrepVer, &rulesVer, &s.CreatedAt)
+		&s.SecurityScore, &filesScanned, &s.ScanDurationMS, &openGrepVer, &rulesVer, &s.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -222,11 +224,11 @@ func (db *DB) CreateScan(scan *Scan) error {
 	result, err := db.conn.Exec(`
 		INSERT INTO scans (repo_id, commit_sha, results_json, summary_json,
 		                   critical_count, high_count, medium_count, low_count, info_count,
-		                   files_scanned, scan_duration_ms, opengrep_version, rules_version)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                   security_score, files_scanned, scan_duration_ms, opengrep_version, rules_version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, scan.RepoID, scan.CommitSHA, scan.ResultsJSON, scan.SummaryJSON,
 		scan.CriticalCount, scan.HighCount, scan.MediumCount, scan.LowCount, scan.InfoCount,
-		scan.FilesScanned, scan.ScanDurationMS, scan.OpenGrepVersion, scan.RulesVersion)
+		scan.SecurityScore, scan.FilesScanned, scan.ScanDurationMS, scan.OpenGrepVersion, scan.RulesVersion)
 	if err != nil {
 		return err
 	}
@@ -303,7 +305,8 @@ func (db *DB) GetScanByCommitPrefix(commitPrefix string) (*ScanWithRepo, error) 
 	row := db.conn.QueryRow(`
 		SELECT s.id, s.repo_id, s.commit_sha, s.results_json, s.summary_json,
 		       s.critical_count, s.high_count, s.medium_count, s.low_count, s.info_count,
-		       s.files_scanned, s.scan_duration_ms, s.opengrep_version, s.rules_version, s.created_at,
+		       COALESCE(s.security_score, 100), s.files_scanned, s.scan_duration_ms,
+		       s.opengrep_version, s.rules_version, s.created_at,
 		       r.url, r.license
 		FROM scans s
 		JOIN repos r ON s.repo_id = r.id
@@ -319,7 +322,7 @@ func (db *DB) GetScanByCommitPrefix(commitPrefix string) (*ScanWithRepo, error) 
 
 	err := row.Scan(&s.ID, &s.RepoID, &s.CommitSHA, &s.ResultsJSON, &summaryJSON,
 		&s.CriticalCount, &s.HighCount, &s.MediumCount, &s.LowCount, &s.InfoCount,
-		&filesScanned, &s.ScanDurationMS, &openGrepVer, &rulesVer, &s.CreatedAt,
+		&s.SecurityScore, &filesScanned, &s.ScanDurationMS, &openGrepVer, &rulesVer, &s.CreatedAt,
 		&s.RepoURL, &license)
 	if err == sql.ErrNoRows {
 		return nil, nil

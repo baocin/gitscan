@@ -87,6 +87,8 @@ type ReportData struct {
 	MediumCount   int
 	LowCount      int
 	InfoCount     int
+	SecurityScore int    // 0-100 weighted security score
+	SecurityGrade string // A, B, C, D, F
 	TotalFindings int
 	Findings      []scanner.Finding
 }
@@ -126,6 +128,8 @@ func (h *Handler) ServeReport(w http.ResponseWriter, r *http.Request) {
 			data.MediumCount = scan.MediumCount
 			data.LowCount = scan.LowCount
 			data.InfoCount = scan.InfoCount
+			data.SecurityScore = scan.SecurityScore
+			data.SecurityGrade = scanner.ScoreGrade(scan.SecurityScore)
 			data.TotalFindings = scan.CriticalCount + scan.HighCount + scan.MediumCount + scan.LowCount
 
 			// Parse findings from results_json

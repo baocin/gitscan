@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,119 @@ import (
 	"github.com/baocin/gitscan/internal/db"
 	"github.com/baocin/gitscan/internal/license"
 )
+
+// Error types for better error handling
+var (
+	ErrRepoNotFound     = errors.New("repository not found")
+	ErrRepoPrivate      = errors.New("repository is private or requires authentication")
+	ErrNetworkError     = errors.New("network error - could not connect to host")
+	ErrInvalidURL       = errors.New("invalid repository URL")
+	ErrCloneTimeout     = errors.New("clone timed out")
+	ErrRepoTooLarge     = errors.New("repository is too large")
+	ErrRateLimited      = errors.New("rate limited by host")
+)
+
+// RepoError wraps an error with additional context
+type RepoError struct {
+	Type    error  // One of the Err* sentinel errors
+	Message string // Human-friendly message
+	Details string // Technical details (e.g., git output)
+}
+
+func (e *RepoError) Error() string {
+	return e.Message
+}
+
+func (e *RepoError) Unwrap() error {
+	return e.Type
+}
+
+// classifyCloneError analyzes git clone output and returns a classified error
+func classifyCloneError(output string, originalErr error, repoURL string, timeout time.Duration) error {
+	outputLower := strings.ToLower(output)
+
+	// Check for common error patterns (order matters - more specific patterns first)
+
+	// Check rate limiting first (before network errors, as both can contain "unable to access")
+	if strings.Contains(outputLower, "rate limit") ||
+		strings.Contains(outputLower, "too many requests") ||
+		strings.Contains(outputLower, "429") {
+		return &RepoError{
+			Type:    ErrRateLimited,
+			Message: "The host is rate limiting requests. Please wait a moment and try again.",
+			Details: output,
+		}
+	}
+
+	// Check for repo not found
+	if strings.Contains(outputLower, "repository not found") ||
+		strings.Contains(outputLower, "could not be found") ||
+		strings.Contains(outputLower, "not found") && strings.Contains(outputLower, "fatal") {
+		return &RepoError{
+			Type:    ErrRepoNotFound,
+			Message: "Repository not found. Please check that the URL is correct and the repository exists.",
+			Details: output,
+		}
+	}
+
+	// Check for authentication/permission issues
+	if strings.Contains(outputLower, "authentication failed") ||
+		strings.Contains(outputLower, "could not read username") ||
+		strings.Contains(outputLower, "could not read password") ||
+		strings.Contains(outputLower, "403") ||
+		strings.Contains(outputLower, "permission denied") {
+		return &RepoError{
+			Type:    ErrRepoPrivate,
+			Message: "This repository is private or requires authentication. git.vet can only scan public repositories.",
+			Details: output,
+		}
+	}
+
+	// Check for invalid URL
+	if strings.Contains(outputLower, "invalid") && strings.Contains(outputLower, "url") {
+		return &RepoError{
+			Type:    ErrInvalidURL,
+			Message: "Invalid repository URL format. Use: git clone https://git.vet/github.com/owner/repo",
+			Details: output,
+		}
+	}
+
+	// Check for network errors (last, as it's the most generic)
+	if strings.Contains(outputLower, "could not resolve host") ||
+		strings.Contains(outputLower, "connection refused") ||
+		strings.Contains(outputLower, "network is unreachable") ||
+		strings.Contains(outputLower, "connection timed out") ||
+		strings.Contains(outputLower, "unable to access") {
+		return &RepoError{
+			Type:    ErrNetworkError,
+			Message: "Could not connect to the repository host. Please verify the URL and try again.",
+			Details: output,
+		}
+	}
+
+	// Default error message
+	return &RepoError{
+		Type:    originalErr,
+		Message: fmt.Sprintf("Failed to clone repository: %s", firstLine(output)),
+		Details: output,
+	}
+}
+
+// firstLine returns the first non-empty line of output
+func firstLine(output string) string {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			// Remove common git prefixes for cleaner output
+			line = strings.TrimPrefix(line, "fatal: ")
+			line = strings.TrimPrefix(line, "error: ")
+			line = strings.TrimPrefix(line, "remote: ")
+			return line
+		}
+	}
+	return "unknown error"
+}
 
 // RepoCache manages cached repository clones
 type RepoCache struct {
@@ -157,9 +271,13 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("clone timed out after %v", c.cloneTimeout)
+			return nil, &RepoError{
+				Type:    ErrCloneTimeout,
+				Message: fmt.Sprintf("Clone timed out after %v. The repository may be too large or the connection is slow.", c.cloneTimeout),
+				Details: string(output),
+			}
 		}
-		return nil, fmt.Errorf("clone failed: %s - %w", string(output), err)
+		return nil, classifyCloneError(string(output), err, repoURL, c.cloneTimeout)
 	}
 
 	// Get commit SHA
