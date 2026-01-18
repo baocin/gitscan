@@ -262,9 +262,11 @@ func TestScannerWithOpengrep(t *testing.T) {
 	}
 
 	// Run opengrep with auto config
+	// Use --quiet to suppress progress bar that can interfere with stdout parsing
 	t.Log("Running scanner...")
 	cmd = exec.CommandContext(ctx, opengrep,
 		"scan",
+		"--quiet",
 		"--config", "auto",
 		"--sarif",
 		repoDir,

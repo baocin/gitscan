@@ -206,8 +206,10 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 
 	// Build opengrep command - requires "scan" subcommand
 	// Use --sarif for SARIF output format (not --json which is semgrep native format)
+	// Use --quiet to suppress progress bar that can interfere with stdout parsing
 	args := []string{
 		"scan",
+		"--quiet",
 		"--sarif",
 	}
 
