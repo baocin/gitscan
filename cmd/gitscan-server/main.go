@@ -361,6 +361,26 @@ func blockSuspiciousPaths(database *db.DB, next http.Handler) http.Handler {
 			return
 		}
 
+		// Block WebDAV methods (scanning/reconnaissance attempts)
+		webdavMethods := []string{"PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK"}
+		for _, webdavMethod := range webdavMethods {
+			if method == webdavMethod {
+				log.Printf("[BLOCKED] %s method from %s to %s (WebDAV probing)", method, clientIP, path)
+				if database != nil {
+					database.LogSuspiciousRequest(clientIP, fmt.Sprintf("%s %s", method, path), r.UserAgent())
+					count, err := database.CountRecentSuspiciousRequests(clientIP, suspiciousRequestWindow)
+					if err == nil && count >= suspiciousRequestThreshold {
+						reason := fmt.Sprintf("Auto-banned: %d suspicious requests (WebDAV probing) in %v", count, suspiciousRequestWindow)
+						database.BanIP(clientIP, reason, banDuration)
+						log.Printf("[SECURITY] AUTO-BANNED IP %s: %s", clientIP, reason)
+					}
+				}
+				time.Sleep(tarpitDelay)
+				http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+				return
+			}
+		}
+
 		// Common attack patterns to block
 		suspiciousPatterns := []string{
 			// Environment files
