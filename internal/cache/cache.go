@@ -332,8 +332,28 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 	// Create local path
 	localPath := filepath.Join(c.cacheDir, sanitizePath(repoPath))
 
-	// Remove any existing directory
-	os.RemoveAll(localPath)
+	// Remove any existing directory (with error handling)
+	if _, err := os.Stat(localPath); err == nil {
+		log.Printf("[cache] Removing existing cache directory: %s", localPath)
+		if err := os.RemoveAll(localPath); err != nil {
+			log.Printf("[cache] WARNING: Failed to remove existing directory %s: %v", localPath, err)
+			// Try a more aggressive approach: rename then delete
+			backupPath := localPath + ".old." + time.Now().Format("20060102150405")
+			if renameErr := os.Rename(localPath, backupPath); renameErr != nil {
+				return nil, fmt.Errorf("failed to clear existing cache directory %s (remove failed: %v, rename failed: %v)", localPath, err, renameErr)
+			}
+			log.Printf("[cache] Renamed existing directory to %s for later cleanup", backupPath)
+			// Try to delete the renamed directory in background (best effort)
+			go func() {
+				time.Sleep(1 * time.Second)
+				if err := os.RemoveAll(backupPath); err != nil {
+					log.Printf("[cache] Background cleanup failed for %s: %v", backupPath, err)
+				} else {
+					log.Printf("[cache] Background cleanup succeeded for %s", backupPath)
+				}
+			}()
+		}
+	}
 
 	// Clone with shallow depth
 	ctx, cancel := context.WithTimeout(ctx, c.cloneTimeout)
