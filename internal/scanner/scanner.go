@@ -18,33 +18,49 @@ type Scanner struct {
 	binaryPath string
 	rulesPath  string
 	timeout    time.Duration
+	scanLevel  ScanLevel
 }
+
+// ScanLevel defines the depth/thoroughness of scanning
+type ScanLevel string
+
+const (
+	ScanLevelQuick     ScanLevel = "quick"     // Fast scan, critical issues only
+	ScanLevelNormal    ScanLevel = "normal"    // Standard scan, all severities
+	ScanLevelThorough  ScanLevel = "thorough"  // Deep scan, maximum analysis
+)
 
 // Config holds scanner configuration
 type Config struct {
 	BinaryPath string
 	RulesPath  string
 	Timeout    time.Duration
+	ScanLevel  ScanLevel
 }
 
 // DefaultConfig returns default scanner configuration
 func DefaultConfig() Config {
 	return Config{
-		BinaryPath: "opengrep", // Assumes opengrep is in PATH
-		RulesPath:  "",         // Use default rules
-		Timeout:    60 * time.Second,
+		BinaryPath: "opengrep",           // Assumes opengrep is in PATH
+		RulesPath:  "",                   // Use default rules
+		Timeout:    180 * time.Second,    // 3 minutes - increased for large repos
+		ScanLevel:  ScanLevelNormal,
 	}
 }
 
 // New creates a new scanner instance
 func New(cfg Config) *Scanner {
 	if cfg.Timeout == 0 {
-		cfg.Timeout = 60 * time.Second
+		cfg.Timeout = 180 * time.Second
+	}
+	if cfg.ScanLevel == "" {
+		cfg.ScanLevel = ScanLevelNormal
 	}
 	return &Scanner{
 		binaryPath: cfg.BinaryPath,
 		rulesPath:  cfg.RulesPath,
 		timeout:    cfg.Timeout,
+		scanLevel:  cfg.ScanLevel,
 	}
 }
 
@@ -74,17 +90,22 @@ type ProgressFunc func(Progress)
 
 // Result represents scan results
 type Result struct {
-	Findings      []Finding
-	CriticalCount int
-	HighCount     int
-	MediumCount   int
-	LowCount      int
-	InfoCount     int
-	FilesScanned  int
-	Duration      time.Duration
-	FindingsJSON  string // JSON array of Finding structs (not raw SARIF)
-	ScannerUsed   string // "opengrep", "semgrep", or "mock"
-	SecurityScore int    // 0-100 score based on severity-weighted findings
+	Findings         []Finding
+	CriticalCount    int
+	HighCount        int
+	MediumCount      int
+	LowCount         int
+	InfoCount        int
+	FilesScanned     int
+	Duration         time.Duration
+	FindingsJSON     string    // JSON array of Finding structs (not raw SARIF)
+	ScannerUsed      string    // "opengrep", "semgrep", or "mock"
+	SecurityScore    int       // 0-100 score based on severity-weighted findings
+	ScanLevel        ScanLevel // Scan level used
+	CachedFileCount  int       // Number of files reused from cache
+	ScannedFileCount int       // Number of files actually scanned
+	IsPartial        bool      // True if scan timed out with partial results
+	PartialReason    string    // Why partial: "timeout", "cancelled", etc.
 }
 
 // SecurityScoreWeights defines point deductions per severity level
@@ -194,6 +215,56 @@ type SARIFOutput struct {
 	} `json:"runs"`
 }
 
+// buildScanArgs builds opengrep arguments based on scan level
+func (s *Scanner) buildScanArgs(repoPath string) []string {
+	args := []string{
+		"scan",
+		"--sarif",
+		"--disable-version-check", // Prevent permission errors on version cache file
+	}
+
+	// Add level-specific performance flags
+	switch s.scanLevel {
+	case ScanLevelQuick:
+		// Fast scan: critical only, aggressive timeouts, smaller files, more parallelism
+		args = append(args, "--severity", "ERROR")
+		args = append(args, "--timeout", "2")
+		args = append(args, "--max-target-bytes", "500000") // 500KB max
+		args = append(args, "--jobs", "16")
+		args = append(args, "--timeout-threshold", "1") // Skip file after 1 timeout
+
+	case ScanLevelThorough:
+		// Deep scan: all severities, longer timeouts, larger files, less parallelism
+		args = append(args, "--timeout", "30")
+		args = append(args, "--max-target-bytes", "5000000") // 5MB max
+		args = append(args, "--jobs", "8")
+		args = append(args, "--timeout-threshold", "5")
+
+	default: // ScanLevelNormal
+		// Balanced scan: all severities, standard timeouts
+		args = append(args, "--timeout", "5")
+		args = append(args, "--max-target-bytes", "1000000") // 1MB max
+		args = append(args, "--jobs", "12")
+		args = append(args, "--timeout-threshold", "3")
+	}
+
+	// Add config
+	if s.rulesPath != "" {
+		args = append(args, "--config", s.rulesPath)
+	} else {
+		args = append(args, "--config", "auto")
+	}
+
+	// Exclude common bloat
+	args = append(args, "--exclude", "node_modules")
+	args = append(args, "--exclude", "vendor")
+	args = append(args, "--exclude", "*.min.js")
+	args = append(args, "--exclude", "*.bundle.js")
+
+	args = append(args, repoPath)
+	return args
+}
+
 // Scan performs a security scan on the given path
 func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn ProgressFunc) (*Result, error) {
 	startTime := time.Now()
@@ -204,32 +275,56 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 		totalFiles = 0 // Continue even if we can't count
 	}
 
-	// Build opengrep command - requires "scan" subcommand
-	// Use --sarif for SARIF output format (not --json which is semgrep native format)
-	// Use --quiet to suppress progress bar that can interfere with stdout parsing
-	args := []string{
-		"scan",
-		"--quiet",
-		"--sarif",
+	// Build opengrep command args based on scan level
+	args := s.buildScanArgs(repoPath)
+
+	// Create context with timeout (adjust based on scan level)
+	timeout := s.timeout
+	switch s.scanLevel {
+	case ScanLevelQuick:
+		timeout = 30 * time.Second
+	case ScanLevelThorough:
+		timeout = 120 * time.Second
 	}
-
-	if s.rulesPath != "" {
-		args = append(args, "--config", s.rulesPath)
-	} else {
-		// Use auto config to detect language and apply relevant rules
-		args = append(args, "--config", "auto")
-	}
-
-	args = append(args, repoPath)
-
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	// Validate repository path exists before attempting scan
+	if stat, err := os.Stat(repoPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("repository path does not exist: %s (this indicates a cache directory issue)", repoPath)
+		}
+		return nil, fmt.Errorf("cannot access repository path %s: %w", repoPath, err)
+	} else if !stat.IsDir() {
+		return nil, fmt.Errorf("repository path is not a directory: %s", repoPath)
+	}
 
 	cmd := exec.CommandContext(ctx, s.binaryPath, args...)
 	// Set QT_QPA_PLATFORM=offscreen to prevent Qt display errors on headless servers
 	cmd.Env = append(os.Environ(), "QT_QPA_PLATFORM=offscreen")
-	log.Printf("[scanner] Running: %s %s", s.binaryPath, strings.Join(args, " "))
+	log.Printf("[scanner] Running (%s): %s %s", s.scanLevel, s.binaryPath, strings.Join(args, " "))
+	log.Printf("[scanner] Repository path: %s", repoPath)
+
+	// Log cache directory for config auto downloads and ensure it exists
+	if cacheDir, err := os.UserCacheDir(); err == nil {
+		log.Printf("[scanner] User cache dir: %s", cacheDir)
+		semgrepCache := filepath.Join(cacheDir, "semgrep")
+		if stat, err := os.Stat(semgrepCache); err == nil {
+			log.Printf("[scanner] Semgrep cache exists: %s (readable: %t)", semgrepCache, stat.IsDir())
+		} else if os.IsNotExist(err) {
+			// Create semgrep cache directory with proper permissions
+			log.Printf("[scanner] Semgrep cache missing, creating: %s", semgrepCache)
+			if err := os.MkdirAll(semgrepCache, 0755); err != nil {
+				log.Printf("[scanner] Warning: failed to create semgrep cache: %v", err)
+			} else {
+				log.Printf("[scanner] Semgrep cache created successfully")
+			}
+		} else {
+			log.Printf("[scanner] Warning: semgrep cache stat error: %v", err)
+		}
+	} else {
+		log.Printf("[scanner] Warning: cannot determine user cache dir: %v", err)
+	}
 
 	// Capture stdout for JSON output
 	stdout, err := cmd.StdoutPipe()
@@ -292,12 +387,35 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 
 	// Log stderr output for debugging (especially important when stdout is empty)
 	stderrStr := strings.TrimSpace(stderrOutput.String())
+	stdoutStr := strings.TrimSpace(jsonOutput.String())
 	if stderrStr != "" {
 		log.Printf("[scanner] Stderr output: %s", stderrStr)
+	}
+	// Also log stdout if it's not SARIF JSON (likely an error message)
+	if stdoutStr != "" && !strings.HasPrefix(stdoutStr, "{") {
+		log.Printf("[scanner] Stdout (non-JSON): %s", stdoutStr)
 	}
 
 	// Check for timeout/cancellation first, before checking exit codes
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
+		// Try to salvage partial results from what was scanned before timeout
+		log.Printf("[scanner] Scan timed out after %v, attempting to parse partial results...", s.timeout)
+
+		if len(jsonOutput.String()) > 0 {
+			partialResult, parseErr := parseSARIFOutput(jsonOutput.String(), repoPath, totalFiles, startTime)
+			if parseErr == nil && len(partialResult.Findings) > 0 {
+				// We got partial results! Return them with warning
+				partialResult.ScannerUsed = s.binaryPath
+				partialResult.ScanLevel = s.scanLevel
+				partialResult.IsPartial = true
+				partialResult.PartialReason = fmt.Sprintf("timeout after %v", s.timeout)
+				log.Printf("[scanner] Partial results recovered: %d findings from %d files (timeout)",
+					len(partialResult.Findings), partialResult.FilesScanned)
+				return partialResult, nil
+			}
+		}
+
+		// No partial results available, return timeout error
 		return nil, fmt.Errorf("scan timed out after %v", s.timeout)
 	}
 
@@ -310,8 +428,40 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 			} else if exitErr.ExitCode() == -1 {
 				// Exit code -1 typically means killed by signal (could be timeout or OOM)
 				return nil, fmt.Errorf("scanner was terminated (exit code -1). This may indicate timeout, out of memory, or a crash. Stderr: %s", stderrStr)
+			} else if exitErr.ExitCode() == 2 {
+				// Exit code 2 indicates configuration/rules error
+				// BUT if we have valid SARIF output, the scan actually succeeded
+				// (exit code 2 may be from cleanup/version check failures)
+				if stdoutStr != "" && strings.HasPrefix(stdoutStr, "{") {
+					// We have JSON output, try to parse it
+					if _, parseErr := parseSARIFOutput(stdoutStr, repoPath, totalFiles, startTime); parseErr == nil {
+						// Valid SARIF! Scan succeeded despite exit code 2
+						log.Printf("[scanner] Exit code 2 but valid SARIF output present, treating as success")
+						err = nil // Clear the error, proceed with normal parsing
+					} else {
+						// Invalid SARIF, this is a real error
+						log.Printf("[scanner] Exit code 2 with invalid SARIF output: %v", parseErr)
+						return nil, fmt.Errorf("scanner configuration error (exit code 2): invalid SARIF output: %w", parseErr)
+					}
+				} else {
+					// No JSON output, this is a real configuration error
+					errorMsg := stderrStr
+					if stdoutStr != "" {
+						if errorMsg != "" {
+							errorMsg = fmt.Sprintf("Stderr: %s; Stdout: %s", errorMsg, stdoutStr)
+						} else {
+							errorMsg = stdoutStr
+						}
+					}
+					if errorMsg == "" {
+						errorMsg = "No error output captured. Common causes: network failure downloading rules (--config auto), permission issues accessing cache directory, or invalid configuration. Check logs above for cache directory info."
+					}
+					log.Printf("[scanner] Configuration error (exit code 2): %s", errorMsg)
+					return nil, fmt.Errorf("scanner configuration error (exit code 2): %s", errorMsg)
+				}
 			} else {
-				// Include stderr in error for debugging
+				// Include stderr and exit code in error for debugging
+				log.Printf("[scanner] Failed with exit code %d: %s", exitErr.ExitCode(), stderrStr)
 				return nil, fmt.Errorf("scanner failed with exit code %d: %s", exitErr.ExitCode(), stderrStr)
 			}
 		}
@@ -330,7 +480,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 		log.Printf("[scanner] Raw output (first 500 chars): %s", jsonOutput.String()[:500])
 	}
 
-	result, err := parseSARIFOutput(jsonOutput.String(), totalFiles, startTime)
+	result, err := parseSARIFOutput(jsonOutput.String(), repoPath, totalFiles, startTime)
 	if err != nil {
 		log.Printf("[scanner] SARIF parse error: %v", err)
 		// If parsing fails, return basic result with empty findings
@@ -343,8 +493,9 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 	}
 
 	result.ScannerUsed = s.binaryPath
-	log.Printf("[scanner] Completed: %d findings (%d critical, %d high, %d medium, %d low) in %v",
-		len(result.Findings), result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount, result.Duration)
+	result.ScanLevel = s.scanLevel
+	log.Printf("[scanner] Completed (%s): %d findings (%d critical, %d high, %d medium, %d low) in %v",
+		s.scanLevel, len(result.Findings), result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount, result.Duration)
 	return result, nil
 }
 
@@ -365,7 +516,7 @@ func (s *Scanner) mockScan(repoPath string, totalFiles int, startTime time.Time)
 }
 
 // parseSARIFOutput parses SARIF JSON output from opengrep
-func parseSARIFOutput(jsonStr string, totalFiles int, startTime time.Time) (*Result, error) {
+func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime time.Time) (*Result, error) {
 	if jsonStr == "" {
 		return &Result{
 			FilesScanned: totalFiles,
@@ -409,7 +560,8 @@ func parseSARIFOutput(jsonStr string, totalFiles int, startTime time.Time) (*Res
 
 			if len(r.Locations) > 0 {
 				loc := r.Locations[0].PhysicalLocation
-				finding.Path = loc.ArtifactLocation.URI
+				// Strip repository path prefix to show relative paths
+				finding.Path = strings.TrimPrefix(loc.ArtifactLocation.URI, repoPath+"/")
 				finding.StartLine = loc.Region.StartLine
 				finding.EndLine = loc.Region.EndLine
 				finding.StartCol = loc.Region.StartColumn

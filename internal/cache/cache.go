@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -136,6 +137,7 @@ type RepoCache struct {
 
 	// Configuration
 	maxRepoSize   int64         // Maximum repo size in bytes
+	maxFileSize   int64         // Maximum individual file size to download (git partial clone)
 	staleAfter    time.Duration // Re-fetch repos older than this
 	cloneTimeout  time.Duration
 	fetchTimeout  time.Duration
@@ -145,6 +147,7 @@ type RepoCache struct {
 type Config struct {
 	CacheDir     string
 	MaxRepoSize  int64
+	MaxFileSize  int64         // Maximum individual file size to download (git partial clone)
 	StaleAfter   time.Duration
 	CloneTimeout time.Duration
 	FetchTimeout time.Duration
@@ -161,6 +164,7 @@ func DefaultConfig() Config {
 	return Config{
 		CacheDir:     cacheDir,
 		MaxRepoSize:  500 * 1024 * 1024, // 500MB
+		MaxFileSize:  1 * 1024 * 1024,   // 1MB (matches Normal scan level)
 		StaleAfter:   1 * time.Hour,
 		CloneTimeout: 120 * time.Second,
 		FetchTimeout: 60 * time.Second,
@@ -191,6 +195,7 @@ func New(database *db.DB, cfg Config) (*RepoCache, error) {
 		db:           database,
 		cacheDir:     cfg.CacheDir,
 		maxRepoSize:  cfg.MaxRepoSize,
+		maxFileSize:  cfg.MaxFileSize,
 		staleAfter:   cfg.StaleAfter,
 		cloneTimeout: cfg.CloneTimeout,
 		fetchTimeout: cfg.FetchTimeout,
@@ -215,6 +220,20 @@ func (c *RepoCache) FetchRepo(ctx context.Context, repoPath, cloneURL string, pr
 	if dbRepo != nil {
 		// Check if cache is fresh
 		if time.Since(dbRepo.LastFetchedAt) < c.staleAfter {
+			// Verify the directory actually exists before returning cached version
+			if _, err := os.Stat(dbRepo.LocalPath); err != nil {
+				if os.IsNotExist(err) {
+					log.Printf("[cache] Cached repo directory missing for %s, re-cloning", repoPath)
+					// Directory doesn't exist, need to update (will trigger re-clone)
+					if progressFn != nil {
+						progressFn("Cached directory missing, re-cloning...")
+					}
+					return c.updateRepo(ctx, dbRepo, progressFn)
+				}
+				// Other stat errors (permissions, etc.) - log but try to use anyway
+				log.Printf("[cache] Warning: stat error for %s: %v", dbRepo.LocalPath, err)
+			}
+
 			// Return cached version
 			if progressFn != nil {
 				progressFn("Using cached repository")
@@ -260,24 +279,45 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 	ctx, cancel := context.WithTimeout(ctx, c.cloneTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "git", "clone",
+	log.Printf("[cache] Cloning %s (timeout: %v, max file size: %d bytes)", repoPath, c.cloneTimeout, c.maxFileSize)
+	cloneStart := time.Now()
+
+	// Build git clone command with partial clone filtering to skip large files
+	args := []string{"clone",
 		"--depth", "1",
 		"--single-branch",
 		"--no-tags",
-		repoURL,
-		localPath,
-	)
+	}
+
+	// Add file size filter if configured (skips files larger than opengrep will scan)
+	if c.maxFileSize > 0 {
+		args = append(args, "--filter", fmt.Sprintf("blob:limit=%d", c.maxFileSize))
+	}
+
+	args = append(args, repoURL, localPath)
+	cmd := exec.CommandContext(ctx, "git", args...)
 
 	output, err := cmd.CombinedOutput()
+	cloneDuration := time.Since(cloneStart)
+
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("[cache] Clone timeout for %s after %v (git output: %s)", repoPath, cloneDuration, truncateOutput(string(output), 200))
 			return nil, &RepoError{
 				Type:    ErrCloneTimeout,
 				Message: fmt.Sprintf("Clone timed out after %v. The repository may be too large or the connection is slow.", c.cloneTimeout),
 				Details: string(output),
 			}
 		}
+		log.Printf("[cache] Clone failed for %s after %v: %v (git output: %s)", repoPath, cloneDuration, err, truncateOutput(string(output), 200))
 		return nil, classifyCloneError(string(output), err, repoURL, c.cloneTimeout)
+	}
+
+	// Make repo read-only immediately for security (prevents malicious code execution)
+	if err := makeReadOnly(localPath); err != nil {
+		// Log but don't fail - this is a defense-in-depth measure
+		// The scan can still proceed even if we can't lock down permissions
+		fmt.Fprintf(os.Stderr, "Warning: failed to set read-only permissions on %s: %v\n", localPath, err)
 	}
 
 	// Get commit SHA
@@ -288,6 +328,10 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 
 	// Get repo stats
 	sizeBytes, fileCount := c.getRepoStats(localPath)
+
+	// Log successful clone with stats
+	sizeMB := float64(sizeBytes) / (1024 * 1024)
+	log.Printf("[cache] Clone succeeded for %s: %d files, %.2f MB in %v", repoPath, fileCount, sizeMB, cloneDuration)
 
 	// Check size limit
 	if sizeBytes > c.maxRepoSize {
@@ -330,27 +374,170 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn ProgressFunc) (*CachedRepo, error) {
 	// Check if local path exists
 	if _, err := os.Stat(dbRepo.LocalPath); os.IsNotExist(err) {
-		// Re-clone if missing - dbRepo.URL contains full path like "github.com/user/repo"
+		// Directory missing, re-clone to existing path and UPDATE database record
+		// (Don't call cloneRepo() as it would try to INSERT a new record)
 		repoURL := fmt.Sprintf("https://%s.git", dbRepo.URL)
-		return c.cloneRepo(ctx, dbRepo.URL, repoURL, progressFn)
+
+		if progressFn != nil {
+			progressFn("Re-cloning missing directory...")
+		}
+
+		log.Printf("[cache] Re-cloning to existing path %s (timeout: %v, max file size: %d bytes)", dbRepo.LocalPath, c.cloneTimeout, c.maxFileSize)
+		cloneStart := time.Now()
+
+		// Clone with timeout
+		cloneCtx, cancel := context.WithTimeout(ctx, c.cloneTimeout)
+		defer cancel()
+
+		// Build git clone command with partial clone filtering
+		args := []string{"clone",
+			"--depth", "1",
+			"--single-branch",
+			"--no-tags",
+		}
+
+		// Add file size filter if configured
+		if c.maxFileSize > 0 {
+			args = append(args, "--filter", fmt.Sprintf("blob:limit=%d", c.maxFileSize))
+		}
+
+		args = append(args, repoURL, dbRepo.LocalPath)
+		cmd := exec.CommandContext(cloneCtx, "git", args...)
+
+		output, err := cmd.CombinedOutput()
+		cloneDuration := time.Since(cloneStart)
+
+		if err != nil {
+			if cloneCtx.Err() == context.DeadlineExceeded {
+				log.Printf("[cache] Re-clone timeout for %s after %v", dbRepo.URL, cloneDuration)
+				return nil, &RepoError{
+					Type:    ErrCloneTimeout,
+					Message: fmt.Sprintf("Clone timed out after %v. The repository may be too large or the connection is slow.", c.cloneTimeout),
+					Details: string(output),
+				}
+			}
+			log.Printf("[cache] Re-clone failed for %s after %v: %v", dbRepo.URL, cloneDuration, err)
+			return nil, classifyCloneError(string(output), err, repoURL, c.cloneTimeout)
+		}
+
+		// Make repo read-only for security
+		if err := makeReadOnly(dbRepo.LocalPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to set read-only permissions on %s: %v\n", dbRepo.LocalPath, err)
+		}
+
+		// Get commit SHA and stats
+		commitSHA, err := c.getHeadCommit(dbRepo.LocalPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get commit SHA: %w", err)
+		}
+
+		sizeBytes, fileCount := c.getRepoStats(dbRepo.LocalPath)
+
+		// Log successful re-clone
+		sizeMB := float64(sizeBytes) / (1024 * 1024)
+		log.Printf("[cache] Re-clone succeeded for %s: %d files, %.2f MB in %v", dbRepo.URL, fileCount, sizeMB, cloneDuration)
+
+		// UPDATE existing database record (not INSERT)
+		if err := c.db.UpdateRepoFetched(dbRepo.ID, commitSHA, sizeBytes, fileCount); err != nil {
+			return nil, fmt.Errorf("failed to update repo: %w", err)
+		}
+
+		// Detect and update license
+		licenseType := ""
+		if licInfo := license.Detect(dbRepo.LocalPath); licInfo != nil {
+			licenseType = licInfo.Type
+			c.db.UpdateRepoLicense(dbRepo.ID, licenseType)
+		}
+
+		if progressFn != nil {
+			progressFn(fmt.Sprintf("Re-cloned %d files", fileCount))
+		}
+
+		return &CachedRepo{
+			ID:            dbRepo.ID,
+			URL:           dbRepo.URL,
+			LocalPath:     dbRepo.LocalPath,
+			LastCommitSHA: commitSHA,
+			FileCount:     fileCount,
+			License:       licenseType,
+		}, nil
+	}
+
+	// Check remote HEAD before fetching to avoid unnecessary work
+	repoURL := fmt.Sprintf("https://%s.git", dbRepo.URL)
+	remoteHead, err := c.checkRemoteHead(ctx, repoURL)
+	if err != nil {
+		// If we can't check remote, log and proceed with fetch anyway
+		log.Printf("[cache] Failed to check remote HEAD for %s: %v, proceeding with fetch", dbRepo.URL, err)
+	} else if remoteHead == dbRepo.LastCommitSHA {
+		// Remote HEAD matches our cached version - no need to fetch
+		log.Printf("[cache] Remote HEAD matches cached SHA %s for %s, skipping fetch", truncate(remoteHead, 8), dbRepo.URL)
+
+		// Just update the last_fetched_at timestamp to refresh the cache
+		sizeBytes, fileCount := c.getRepoStats(dbRepo.LocalPath)
+		if err := c.db.UpdateRepoFetched(dbRepo.ID, dbRepo.LastCommitSHA, sizeBytes, fileCount); err != nil {
+			return nil, fmt.Errorf("failed to update repo timestamp: %w", err)
+		}
+
+		if progressFn != nil {
+			progressFn("Repository is up to date")
+		}
+
+		// Detect license
+		licenseType := ""
+		if licInfo := license.Detect(dbRepo.LocalPath); licInfo != nil {
+			licenseType = licInfo.Type
+		}
+
+		return &CachedRepo{
+			ID:            dbRepo.ID,
+			URL:           dbRepo.URL,
+			LocalPath:     dbRepo.LocalPath,
+			LastCommitSHA: dbRepo.LastCommitSHA,
+			FileCount:     fileCount,
+			License:       licenseType,
+		}, nil
+	}
+
+	// Remote has changed, proceed with fetch/reset
+	log.Printf("[cache] Remote HEAD %s differs from cached %s, fetching updates", truncate(remoteHead, 8), truncate(dbRepo.LastCommitSHA, 8))
+
+	// Make repo writable temporarily for git operations
+	if err := makeWritable(dbRepo.LocalPath); err != nil {
+		return nil, fmt.Errorf("failed to make repo writable: %w", err)
 	}
 
 	// Fetch updates
+	log.Printf("[cache] Fetching updates for %s (timeout: %v)", dbRepo.URL, c.fetchTimeout)
+	fetchStart := time.Now()
+
 	ctx, cancel := context.WithTimeout(ctx, c.fetchTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "git", "-C", dbRepo.LocalPath, "fetch", "--depth", "1", "origin")
 	if output, err := cmd.CombinedOutput(); err != nil {
+		fetchDuration := time.Since(fetchStart)
 		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("[cache] Fetch timeout for %s after %v", dbRepo.URL, fetchDuration)
 			return nil, fmt.Errorf("fetch timed out after %v", c.fetchTimeout)
 		}
+		log.Printf("[cache] Fetch failed for %s after %v: %v (git output: %s)", dbRepo.URL, fetchDuration, err, truncateOutput(string(output), 200))
 		return nil, fmt.Errorf("fetch failed: %s - %w", string(output), err)
 	}
 
 	// Reset to latest
 	cmd = exec.CommandContext(ctx, "git", "-C", dbRepo.LocalPath, "reset", "--hard", "origin/HEAD")
 	if output, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("[cache] Reset failed for %s: %v (git output: %s)", dbRepo.URL, err, truncateOutput(string(output), 200))
 		return nil, fmt.Errorf("reset failed: %s - %w", string(output), err)
+	}
+
+	fetchDuration := time.Since(fetchStart)
+	log.Printf("[cache] Fetch succeeded for %s in %v", dbRepo.URL, fetchDuration)
+
+	// Make repo read-only again after git operations complete
+	if err := makeReadOnly(dbRepo.LocalPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to set read-only permissions on %s: %v\n", dbRepo.LocalPath, err)
 	}
 
 	// Get new commit SHA
@@ -396,6 +583,27 @@ func (c *RepoCache) getHeadCommit(repoPath string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+// checkRemoteHead gets the remote HEAD commit SHA without fetching
+// Returns the commit SHA or empty string if unable to determine
+func (c *RepoCache) checkRemoteHead(ctx context.Context, repoURL string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", "ls-remote", repoURL, "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git ls-remote failed: %w", err)
+	}
+
+	// Output format: "commit-sha\tHEAD\n"
+	parts := strings.Fields(string(output))
+	if len(parts) < 1 {
+		return "", fmt.Errorf("unexpected ls-remote output: %s", output)
+	}
+
+	return strings.TrimSpace(parts[0]), nil
 }
 
 // getRepoStats gets repository size and file count
@@ -474,4 +682,47 @@ func truncate(s string, length int) string {
 		return s
 	}
 	return s[:length]
+}
+
+// truncateOutput truncates output and removes newlines for logging
+func truncateOutput(s string, maxLen int) string {
+	// Replace newlines with spaces for single-line logging
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.TrimSpace(s)
+	if len(s) > maxLen {
+		return s[:maxLen] + "..."
+	}
+	return s
+}
+
+// makeReadOnly recursively sets read-only permissions on a directory tree
+// Directories: 0555 (r-x, allows traversal but no writes)
+// Files: 0444 (r--, read-only, not executable)
+// This prevents malicious code from executing or modifying itself
+func makeReadOnly(path string) error {
+	return filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return os.Chmod(p, 0555)
+		}
+		return os.Chmod(p, 0444)
+	})
+}
+
+// makeWritable recursively sets writable permissions on a directory tree
+// Used temporarily for git operations (fetch/reset) that need write access
+// Directories: 0755 (rwx)
+// Files: 0644 (rw-)
+func makeWritable(path string) error {
+	return filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return os.Chmod(p, 0755)
+		}
+		return os.Chmod(p, 0644)
+	})
 }

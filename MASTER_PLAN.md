@@ -16,6 +16,38 @@ git clone https://git.vet/github.com/user/repo
 
 Instead of cloning, they receive a security scan report displayed directly in their terminal.
 
+### Core Philosophy: Credential Theft Detection First
+
+**The primary question git.vet answers: "Will this tool steal my local credentials?"**
+
+Unlike traditional vulnerability scanners that prioritize CVEs and code quality issues, git.vet is built around a paranoid security model focused on **local credential theft detection**. When evaluating any repository, the hierarchy of concerns is:
+
+1. **🚨 CRITICAL - Credential Theft Behaviors** (highest priority)
+   - Reading `.aws/credentials`, `.aws/config`
+   - Accessing `~/.ssh/` directory (private keys, known_hosts)
+   - Exfiltrating `.env` files or environment variables
+   - Stealing browser cookies/sessions
+   - Reading password managers or keychains
+   - POST requests with sensitive local file contents
+
+2. **🔴 HIGH - Malicious Code Patterns**
+   - Encoded/obfuscated payloads (base64 decoded exec)
+   - Network exfiltration to hardcoded IPs/domains
+   - Process injection or persistence mechanisms
+   - Suspicious curl/wget piped to shell
+
+3. **🟠 MEDIUM - Traditional Vulnerabilities**
+   - CVEs in dependencies
+   - SQL injection, XSS, command injection
+   - Insecure cryptography
+
+4. **🟡 LOW - Code Quality Issues**
+   - Deprecated APIs
+   - Missing input validation
+   - Code smells
+
+This inverted priority model reflects the real-world threat: users clone repos to run locally, and the biggest risk is immediate credential exfiltration—not theoretical vulnerabilities that require specific conditions to exploit.
+
 ### Current Implementation Status
 
 | Feature | Status | Location |
@@ -23,9 +55,9 @@ Instead of cloning, they receive a security scan report displayed directly in th
 | Git Smart HTTP Protocol | ✅ Done | `internal/githttp/` |
 | Opengrep/Semgrep Integration | ✅ Done | `internal/scanner/` |
 | SARIF Output Parsing | ✅ Done | `internal/scanner/scanner.go` |
-| Terminal Report (Sideband) | ✅ Done | `internal/githttp/handler.go` |
-| Web Report Page | ✅ Done | `web/templates/report.html` |
-| QR Code Generation | ✅ Done | `internal/githttp/qrcode.go` |
+| Terminal Report (Sideband) | ✅ Done | `internal/githttp/handler.go` (80-char width, critical-first sorting) |
+| Web Report Page | ✅ Done | `web/templates/report.html` (critical-first sorting) |
+| QR Code Generation | ✅ Done | `internal/githttp/qrcode.go` (High recovery, full blocks) |
 | License Detection | ✅ Done | `internal/license/license.go` |
 | Rate Limiting | ✅ Done | `internal/ratelimit/limiter.go` |
 | Repository Caching | ✅ Done | `internal/cache/cache.go` |
@@ -99,6 +131,10 @@ remote: ║  └─ fixtures/dom/src/components/Editor.js:156                   
 remote: ║                                                                  ║
 remote: ╠══════════════════════════════════════════════════════════════════╣
 remote: ║  Full report: https://git.vet/r/fb-react-a1b2c3               ║
+remote: ║                                                                  ║
+remote: ║          [Scannable QR code displays here]                       ║
+remote: ║         Scan QR to view full web report                          ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
 remote: ║  To clone: git clone https://github.com/facebook/react           ║
 remote: ╚══════════════════════════════════════════════════════════════════╝
 remote:
@@ -123,6 +159,81 @@ fatal: Could not read from remote repository.
 | Bitbucket | `git.vet/bitbucket.org/owner/repo` |
 | Gitea | `git.vet/gitea.example.com/owner/repo` |
 | Self-hosted GitLab | `git.vet/gitlab.company.com/owner/repo` |
+
+### SSH Protocol Support
+
+git.vet supports both HTTPS and SSH access:
+
+```bash
+# HTTPS (default)
+git clone https://git.vet/github.com/user/repo
+
+# SSH
+git clone ssh://git.vet/github.com/user/repo
+```
+
+**Implementation Status:**
+- [ ] **TODO: Verify SSH connectivity is working** - User reported `ssh://git.vet/github.com/WebGoat/WebGoat` times out on port 22
+- [ ] SSH server implementation (`internal/gitssh/`)
+- [ ] SSH key fingerprint extraction for rate limiting
+- [ ] SSH sideband message support
+
+**SSH Server Architecture:**
+```go
+// internal/gitssh/server.go
+type SSHServer struct {
+    config   *ssh.ServerConfig
+    handler  *githttp.Handler  // Reuse HTTP handler logic
+}
+
+// SSH connections use the same scan pipeline as HTTPS
+func (s *SSHServer) HandleGitUploadPack(session ssh.Session) {
+    // Extract repo from command: git-upload-pack '/github.com/user/repo'
+    // Route through same handler as HTTP
+}
+```
+
+### Repository Deduplication (SSH vs HTTPS)
+
+The same repository accessed via different protocols should share cache and scan results:
+
+```
+ssh://git.vet/github.com/user/repo   ─┐
+                                      ├──▶ Canonical: github.com/user/repo
+https://git.vet/github.com/user/repo ─┘
+```
+
+**Normalization Rules:**
+1. Strip protocol prefix (`https://`, `ssh://`, `git://`)
+2. Strip `git.vet/` prefix
+3. Remove trailing `.git` suffix
+4. Lowercase the host portion
+5. Normalize path separators
+
+```go
+// internal/cache/normalize.go
+func NormalizeRepoURL(rawURL string) string {
+    // "ssh://git.vet/github.com/User/Repo.git" → "github.com/user/repo"
+    // "https://git.vet/GITHUB.COM/User/Repo"  → "github.com/user/repo"
+
+    url = strings.TrimPrefix(url, "ssh://")
+    url = strings.TrimPrefix(url, "https://")
+    url = strings.TrimPrefix(url, "git://")
+    url = strings.TrimPrefix(url, "git.vet/")
+    url = strings.TrimSuffix(url, ".git")
+
+    parts := strings.SplitN(url, "/", 2)
+    if len(parts) == 2 {
+        return strings.ToLower(parts[0]) + "/" + parts[1]
+    }
+    return url
+}
+```
+
+**Database Impact:**
+- `repos.url` stores the **canonical** normalized URL
+- `requests.repo_url` stores the **original** URL for debugging
+- Cache lookups use normalized URL for hits across protocols
 
 ### Branch and Tag Support
 
@@ -507,6 +618,77 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string) (*Results, error) {
 
 ---
 
+## Package Manager Vulnerability Scanning
+
+### Detected Package Managers
+
+git.vet detects and scans dependencies from multiple package manager ecosystems:
+
+| Package Manager | Detection Files | Audit Command | Notes |
+|-----------------|-----------------|---------------|-------|
+| **npm** | `package.json`, `package-lock.json` | `npm audit --json` | Most common |
+| **yarn** | `yarn.lock` | `yarn audit --json` | v1 and v2+ support |
+| **pnpm** | `pnpm-lock.yaml` | `pnpm audit --json` | Strict lockfile |
+| **bun** | `bun.lockb` | `bun audit` (planned) | Binary lockfile |
+| **pip** | `requirements.txt`, `Pipfile.lock` | `pip-audit --json` | Python |
+| **cargo** | `Cargo.toml`, `Cargo.lock` | `cargo audit --json` | Rust |
+| **go** | `go.mod`, `go.sum` | `govulncheck -json` | Go modules |
+| **composer** | `composer.json`, `composer.lock` | `composer audit --format=json` | PHP |
+| **bundler** | `Gemfile`, `Gemfile.lock` | `bundle audit --format=json` | Ruby |
+| **maven** | `pom.xml` | OWASP dependency-check | Java |
+| **gradle** | `build.gradle`, `build.gradle.kts` | OWASP dependency-check | Java/Kotlin |
+
+### Scan Priority Order
+
+When multiple package managers are detected, scan in this order (most critical first):
+
+1. **Runtime dependencies** (package.json, requirements.txt, go.mod)
+2. **Lockfiles** (package-lock.json, yarn.lock, Cargo.lock)
+3. **Development dependencies** (marked separately in output)
+
+### Integration Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Package Vulnerability Pipeline                    │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  1. Detect package managers          2. Run native audit tools      │
+│     ├─ Scan for lockfiles               ├─ npm audit --json        │
+│     ├─ Check for manifest files         ├─ yarn audit --json       │
+│     └─ Identify ecosystems              └─ pip-audit --json        │
+│                                                                     │
+│                            ↓                                        │
+│  3. Normalize vulnerabilities        4. Merge with SAST findings   │
+│     ├─ Map to common severity           ├─ Deduplicate             │
+│     ├─ Extract CVE IDs                  ├─ Cross-reference         │
+│     └─ Get fix versions                 └─ Generate report         │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Example Output
+
+```
+remote: ╔══════════════════════════════════════════════════════════════════╗
+remote: ║  DEPENDENCY VULNERABILITIES (npm)                                ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
+remote: ║  HIGH: lodash@4.17.15 - Prototype Pollution (CVE-2020-8203)     ║
+remote: ║  └─ Fix: npm install lodash@4.17.21                             ║
+remote: ║                                                                  ║
+remote: ║  MEDIUM: axios@0.19.2 - SSRF vulnerability (CVE-2020-28168)     ║
+remote: ║  └─ Fix: npm install axios@0.21.1                               ║
+remote: ╚══════════════════════════════════════════════════════════════════╝
+```
+
+### Notes
+
+- Package vulnerabilities are classified as **MEDIUM** severity by default
+- **Credential theft patterns in dependencies are still CRITICAL** (e.g., malicious postinstall scripts)
+- Lockfile analysis is preferred over manifest analysis for accuracy
+
+---
+
 ## Streaming Progress
 
 The git sideband protocol allows real-time streaming of messages. This is critical for large repos where scanning may take 10+ seconds.
@@ -625,6 +807,58 @@ fmt.Sprintf("%s%s✗ 2 Critical%s", Bold, Red, Reset)
 ```
 
 For `/plain/` mode, colors are stripped.
+
+### Width Constraints
+
+All terminal output is constrained to **80 characters maximum width** for maximum compatibility across terminals, CI/CD systems, and logging tools:
+
+- Box drawing characters and borders fit within 80 chars
+- Finding messages are word-wrapped if needed
+- QR codes are sized to fit (2 chars per module with 4-module quiet zones)
+- Enforced at `internal/githttp/handler.go:301` via `boxWidth := 80`
+
+This ensures readable output even on minimal terminals, SSH sessions with small windows, and automated build logs.
+
+### Finding Display Order
+
+Findings are sorted by **severity from critical to info** (worst first) to prioritize the most important security issues:
+
+```go
+// Severity priority: critical → high → medium → low → info
+severityOrder := map[string]int{
+    "critical": 0, "error": 0, "high": 1, "warning": 1,
+    "medium": 2, "low": 3, "info": 4,
+}
+```
+
+This applies to both:
+- CLI output (terminal sideband messages)
+- Web reports (`web/templates/report.html`)
+
+Implementation: `SortFindingsBySeverity()` in `internal/githttp/handler.go`
+
+### QR Code Implementation
+
+QR codes linking to web reports use:
+
+- **Error correction**: High level (30% damage recovery) for reliable scanning
+- **Characters**: Full blocks (`██`) and spaces only - maximum terminal compatibility
+- **Module size**: 2 characters wide per module (fits 80-char width limit)
+- **Rendering**: 1 QR row per terminal line (taller but easier to scan)
+- **Quiet zones**: 4 modules on all sides (QR spec compliant)
+
+Implementation: `GenerateScaledQR()` in `internal/githttp/qrcode.go`
+
+Example QR display:
+```
+remote: ║  Full report: https://git.vet/r/abc123           ║
+remote: ║                                                  ║
+remote: ║        ██████  ██    ████████    ██████          ║
+remote: ║        ██  ██    ██  ██      ██  ██  ██          ║
+remote: ║        ██████      ████    ██    ██████          ║
+remote: ║         [Additional QR code rows...]             ║
+remote: ║          ^ Scan QR to view full report ^         ║
+```
 
 ---
 
@@ -1111,6 +1345,7 @@ Detect common typosquatting patterns:
 
 ### Web Report Enhancements
 
+- ✅ **Marketing homepage highlights QR code feature** - Terminal demo shows QR code, "Beautiful Web Reports" feature card (`web/templates/index.html`)
 - Copy-to-clipboard button for clone command
 - One-click clone command generation
 - Download report as PDF/JSON
@@ -1224,6 +1459,30 @@ This would position git.vet as a comprehensive code intelligence platform, not j
 ---
 
 ## Future Enhancements
+
+### Phase 1.5 - Credential Theft Detection (PRIORITY)
+- [ ] **Implement credential theft detection rules** - Custom opengrep rules for:
+  - [ ] `.aws/credentials` and `.aws/config` file access patterns
+  - [ ] `~/.ssh/` directory traversal and key reading
+  - [ ] `.env` file exfiltration patterns
+  - [ ] Browser cookie/session stealing
+  - [ ] Keychain/password manager access
+  - [ ] Base64-encoded credential exfiltration
+- [ ] **Severity override system** - Credential theft patterns marked CRITICAL regardless of opengrep default
+- [ ] **Network exfiltration detection** - Identify outbound requests with sensitive data
+
+### Phase 1.6 - Package Vulnerability Scanning
+- [ ] **Detect package manager config files** (package.json, yarn.lock, pnpm-lock.yaml, bun.lockb)
+- [ ] **Run native audit commands** (npm audit, yarn audit, pnpm audit)
+- [ ] **Parse and normalize vulnerability output** to common format
+- [ ] **Scan postinstall scripts** for malicious behavior (CRITICAL priority)
+- [ ] **Support additional ecosystems**: pip-audit, cargo audit, govulncheck
+
+### Phase 1.7 - SSH Protocol Support
+- [ ] **TODO: Verify SSH connectivity is working** - Port 22 timeout reported
+- [ ] **Implement SSH server** (`internal/gitssh/`)
+- [ ] **SSH/HTTPS deduplication** - Canonical URL normalization
+- [ ] **SSH key fingerprint rate limiting**
 
 ### Phase 2
 - [ ] Private repository support (GitHub App OAuth)

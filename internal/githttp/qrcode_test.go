@@ -93,12 +93,12 @@ func TestGenerateScaledQRHasQuietZones(t *testing.T) {
 	// Middle lines (QR data) should have left/right quiet zones (spaces at start and end)
 	for i := 2; i < len(lines)-2; i++ {
 		line := lines[i]
-		// Check for left quiet zone (at least 8 spaces for 4 modules * 2 chars)
-		if !strings.HasPrefix(line, "        ") {
+		// Check for left quiet zone (4 spaces for 4 modules, 1 char per module)
+		if !strings.HasPrefix(line, "    ") {
 			t.Errorf("Line %d missing left quiet zone: %q", i, line[:min(20, len(line))])
 		}
 		// Check for right quiet zone
-		if !strings.HasSuffix(line, "        ") {
+		if !strings.HasSuffix(line, "    ") {
 			t.Errorf("Line %d missing right quiet zone: %q", i, line[max(0, len(line)-20):])
 		}
 	}
@@ -121,29 +121,6 @@ func TestGenerateScaledQRUsesCorrectCharacters(t *testing.T) {
 				t.Errorf("Invalid character at line %d, pos %d: %q (U+%04X)", i, j, string(r), r)
 			}
 		}
-	}
-}
-
-func TestGenerateASCIIQR(t *testing.T) {
-	url := "https://git.vet/r/test"
-	lines := GenerateASCIIQR(url)
-
-	if len(lines) == 0 {
-		t.Fatal("GenerateASCIIQR returned empty result")
-	}
-
-	// Should be smaller than scaled version (1 char per module instead of 2)
-	scaledLines := GenerateScaledQR(url)
-
-	// Compare widths (accounting for quiet zones in scaled version)
-	scaledWidth := len([]rune(scaledLines[2])) // Skip quiet zone lines
-	asciiWidth := len([]rune(lines[0]))
-
-	// ASCII version should be roughly half the width of scaled (minus quiet zones)
-	// Scaled uses 2 chars per module + 16 chars quiet zone
-	// ASCII uses 1 char per module, no quiet zone
-	if asciiWidth >= scaledWidth {
-		t.Errorf("ASCII QR (%d) should be narrower than scaled QR (%d)", asciiWidth, scaledWidth)
 	}
 }
 

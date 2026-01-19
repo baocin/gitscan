@@ -6,8 +6,8 @@ import (
 	"github.com/skip2/go-qrcode"
 )
 
-// GenerateScaledQR generates a large, scannable QR code
-// Uses 2 characters per module horizontally for better phone scanning
+// GenerateScaledQR generates a compact, scannable QR code using half-blocks (Dense1x2 style)
+// Uses Unicode half-blocks (▀▄█) to encode 2 vertical pixels per character for 75% size reduction
 func GenerateScaledQR(url string) []string {
 	qr, err := qrcode.New(url, qrcode.Medium)
 	if err != nil {
@@ -29,17 +29,16 @@ func GenerateScaledQR(url string) []string {
 	lines := []string{}
 
 	// Quiet zone: 4 modules of white space on all sides (QR spec recommends 4)
-	// With 2 chars per module horizontally, that's 8 spaces on left/right
-	quietMargin := "        " // 8 spaces (4 modules * 2 chars)
-	qrWidth := len(bitmap[0])*2 + 16 // QR width + left/right quiet zones
+	quietMargin := strings.Repeat(" ", 4) // 4 modules (1 char per module)
+	qrWidth := len(bitmap[0]) + 8          // QR width + left/right quiet zones (4 each side)
 	quietLine := strings.Repeat(" ", qrWidth)
 
-	// Add top quiet zone (4 lines for 4 modules, since we render 2 rows per line)
+	// Add top quiet zone (2 lines for 4 modules, since we encode 2 rows per line)
 	lines = append(lines, quietLine)
 	lines = append(lines, quietLine)
 
-	// Process 2 rows at a time using half-block characters
-	// This gives us 2 vertical pixels per character line
+	// Process 2 rows at a time using half-block characters (Dense1x2 approach)
+	// This gives us 2 vertical pixels per character, making QR codes 50% shorter
 	for y := 0; y < len(bitmap); y += 2 {
 		var line strings.Builder
 		line.WriteString(quietMargin) // Left quiet zone
@@ -52,18 +51,16 @@ func GenerateScaledQR(url string) []string {
 			}
 
 			// QR codes: true = black module (data), false = white (background)
-			// Terminal: we want black modules to show as filled blocks
-			var char string
+			// Use Unicode half-blocks to encode 2 pixels vertically
 			if top && bottom {
-				char = "██" // Both black - full block, 2 wide
+				line.WriteString("█") // Both black - full block
 			} else if top && !bottom {
-				char = "▀▀" // Top black, bottom white - upper half, 2 wide
+				line.WriteString("▀") // Top black, bottom white - upper half
 			} else if !top && bottom {
-				char = "▄▄" // Top white, bottom black - lower half, 2 wide
+				line.WriteString("▄") // Top white, bottom black - lower half
 			} else {
-				char = "  " // Both white - spaces, 2 wide
+				line.WriteString(" ") // Both white - space
 			}
-			line.WriteString(char)
 		}
 		line.WriteString(quietMargin) // Right quiet zone
 		lines = append(lines, line.String())
@@ -72,58 +69,22 @@ func GenerateScaledQR(url string) []string {
 	// Handle odd number of rows
 	if len(bitmap)%2 == 1 {
 		var line strings.Builder
-		line.WriteString(quietMargin) // Left quiet zone
+		line.WriteString(quietMargin)
 		y := len(bitmap) - 1
 		for x := 0; x < len(bitmap[y]); x++ {
 			if bitmap[y][x] {
-				line.WriteString("▀▀")
-			} else {
-				line.WriteString("  ")
-			}
-		}
-		line.WriteString(quietMargin) // Right quiet zone
-		lines = append(lines, line.String())
-	}
-
-	// Add bottom quiet zone
-	lines = append(lines, quietLine)
-	lines = append(lines, quietLine)
-
-	return lines
-}
-
-// GenerateASCIIQR generates a standard size QR code (smaller than scaled)
-func GenerateASCIIQR(url string) []string {
-	qr, err := qrcode.New(url, qrcode.Low)
-	if err != nil {
-		return []string{"[QR error: " + err.Error() + "]"}
-	}
-
-	qr.DisableBorder = true
-	bitmap := qr.Bitmap()
-	lines := []string{}
-
-	for y := 0; y < len(bitmap); y += 2 {
-		var line strings.Builder
-		for x := 0; x < len(bitmap[y]); x++ {
-			top := bitmap[y][x]
-			bottom := false
-			if y+1 < len(bitmap) {
-				bottom = bitmap[y+1][x]
-			}
-
-			if top && bottom {
-				line.WriteString("█")
-			} else if top && !bottom {
-				line.WriteString("▀")
-			} else if !top && bottom {
-				line.WriteString("▄")
+				line.WriteString("▀") // Top row only, use upper half block
 			} else {
 				line.WriteString(" ")
 			}
 		}
+		line.WriteString(quietMargin)
 		lines = append(lines, line.String())
 	}
+
+	// Add bottom quiet zone (2 lines for 4 modules)
+	lines = append(lines, quietLine)
+	lines = append(lines, quietLine)
 
 	return lines
 }

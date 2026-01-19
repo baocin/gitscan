@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -126,6 +127,22 @@ func (h *Handler) handleInfoRefs(ctx context.Context, w http.ResponseWriter, r *
 	service := r.URL.Query().Get("service")
 	if service != "git-upload-pack" {
 		http.Error(w, "Only git-upload-pack is supported", http.StatusForbidden)
+
+		// Log failed request
+		h.db.LogRequest(&db.Request{
+			IP:             clientIP,
+			UserAgent:      r.Header.Get("User-Agent"),
+			Referer:        r.Header.Get("Referer"),
+			GitVersion:     parseGitVersion(r.Header.Get("User-Agent")),
+			RepoURL:        parsed.FullPath,
+			RequestMode:    parsed.Mode,
+			RequestType:    "info_refs",
+			HTTPMethod:     r.Method,
+			Success:        false,
+			ResponseTimeMS: time.Since(startTime).Milliseconds(),
+			QueryParams:    serializeQueryParams(r),
+			Error:          "Only git-upload-pack is supported",
+		})
 		return
 	}
 
@@ -138,17 +155,43 @@ func (h *Handler) handleInfoRefs(ctx context.Context, w http.ResponseWriter, r *
 	pkt.WriteString(fmt.Sprintf("# service=%s\n", service))
 	pkt.WriteFlush()
 
-	// For gitscan, we advertise a fake ref to trigger the upload-pack phase
-	// The client will then request this ref, and we'll respond with our scan report
+	// For gitscan, we need to advertise a real commit OID to prevent
+	// "bad object" errors. Fetch the repo to get the actual HEAD commit.
+	cloneURL := fmt.Sprintf("https://%s.git", parsed.FullPath)
 
-	// Create a fake commit ID (this won't be used for actual data transfer)
-	fakeOID := "0000000000000000000000000000000000000000"
+	// Quick fetch to get commit SHA (uses cache if available)
+	repo, err := h.cache.FetchRepo(ctx, parsed.FullPath, cloneURL, nil)
+
+	var headOID string
+	if err != nil || repo == nil {
+		// Fallback to a valid-looking SHA if fetch fails
+		// This prevents protocol errors while still allowing the scan to proceed
+		headOID = "4b825dc642cb6eb9a060e54bf8d69288fbee4904" // Empty tree SHA
+	} else {
+		headOID = repo.LastCommitSHA
+	}
 
 	// Write ref advertisement with capabilities
 	caps := "multi_ack thin-pack side-band side-band-64k ofs-delta shallow deepen-since deepen-not deepen-relative no-progress include-tag multi_ack_detailed symref=HEAD:refs/heads/main agent=git.vet/1.0"
-	pkt.WriteString(fmt.Sprintf("%s HEAD\x00%s\n", fakeOID, caps))
-	pkt.WriteString(fmt.Sprintf("%s refs/heads/main\n", fakeOID))
+	pkt.WriteString(fmt.Sprintf("%s HEAD\x00%s\n", headOID, caps))
+	pkt.WriteString(fmt.Sprintf("%s refs/heads/main\n", headOID))
 	pkt.WriteFlush()
+
+	// Log info/refs request
+	responseTime := time.Since(startTime)
+	h.db.LogRequest(&db.Request{
+		IP:             clientIP,
+		UserAgent:      r.Header.Get("User-Agent"),
+		Referer:        r.Header.Get("Referer"),
+		GitVersion:     parseGitVersion(r.Header.Get("User-Agent")),
+		RepoURL:        parsed.FullPath,
+		RequestMode:    parsed.Mode,
+		RequestType:    "info_refs",
+		HTTPMethod:     r.Method,
+		Success:        true,
+		ResponseTimeMS: responseTime.Milliseconds(),
+		QueryParams:    serializeQueryParams(r),
+	})
 }
 
 // handleUploadPack handles the pack negotiation and is where we inject our scan results
@@ -188,7 +231,7 @@ func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r
 	}
 
 	// Start the scan process
-	h.performScan(ctx, sb, parsed, clientIP, startTime, isPrivate, skipCache)
+	h.performScan(ctx, sb, r, parsed, clientIP, startTime, isPrivate, skipCache)
 
 	// Send empty packfile and flush to properly terminate git protocol
 	sb.WriteEmptyPackfile()
@@ -253,17 +296,23 @@ func checkClientDisconnected(ctx context.Context) bool {
 }
 
 // performScan fetches the repo, scans it, and writes results via sideband
-func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *ParsedPath, clientIP string, startTime time.Time, isPrivate bool, skipCache bool) {
+func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.Request, parsed *ParsedPath, clientIP string, startTime time.Time, isPrivate bool, skipCache bool) {
 	report := NewReportWriter(sb)
 	boxWidth := 80
 
 	// Initialize request log - will be filled in as we progress
+	userAgent := r.Header.Get("User-Agent")
 	reqLog := &db.Request{
 		IP:          clientIP,
-		UserAgent:   "", // Could be extracted from HTTP headers if needed
+		UserAgent:   userAgent,
+		Referer:     r.Header.Get("Referer"),
+		GitVersion:  parseGitVersion(userAgent),
 		RepoURL:     parsed.FullPath,
 		RequestMode: parsed.Mode,
+		RequestType: "upload_pack",
+		HTTPMethod:  r.Method,
 		CacheHit:    false,
+		QueryParams: serializeQueryParams(r),
 	}
 
 	// Ensure we always log the request, even on errors or early returns
@@ -342,6 +391,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 			h.metrics.CloneErrors.Add(1)
 		}
 		reqLog.Error = fmt.Sprintf("fetch error: %v", err)
+		log.Printf("Clone failed for %s (from %s) after %v: %v", parsed.FullPath, clientIP, cloneDuration, err)
 		h.writeFetchError(sb, report, parsed, err, boxWidth)
 		return
 	}
@@ -351,6 +401,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		h.metrics.RecordCloneTime(cloneDuration)
 	}
 
+	log.Printf("Clone completed for %s: %d files, commit %s in %v", parsed.FullPath, repo.FileCount, repo.LastCommitSHA[:8], cloneDuration)
 	sb.WriteProgressf("%s [git.vet] Repository fetched", IconSuccess)
 
 	// Always delete the repo after scanning (success or failure)
@@ -374,7 +425,33 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 			reqLog.CacheHit = true
 			reqLog.ScanID = &cachedScan.ID
 			sb.WriteProgressf("%s [git.vet] Using cached scan results", IconSuccess)
-			h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true)
+
+			// Output format based on mode
+			if parsed.Mode == "json" {
+				h.writeJSONReport(sb, parsed, repo, cachedScan)
+			} else {
+				h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true)
+			}
+
+			// Log cache hit request
+			responseTime := time.Since(startTime)
+			userAgent := r.Header.Get("User-Agent")
+			h.db.LogRequest(&db.Request{
+				IP:             clientIP,
+				UserAgent:      userAgent,
+				Referer:        r.Header.Get("Referer"),
+				GitVersion:     parseGitVersion(userAgent),
+				RepoURL:        parsed.FullPath,
+				CommitSHA:      repo.LastCommitSHA,
+				RequestMode:    parsed.Mode,
+				RequestType:    "upload_pack",
+				HTTPMethod:     r.Method,
+				ScanID:         &cachedScan.ID,
+				CacheHit:       true,
+				Success:        true,
+				ResponseTimeMS: responseTime.Milliseconds(),
+				QueryParams:    serializeQueryParams(r),
+			})
 			return
 		}
 		// Cache miss - record it
@@ -411,11 +488,28 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		return
 	}
 
-	if err != nil {
+	// Check for partial results (scan timeout but with recoverable data)
+	if scanResult != nil && scanResult.IsPartial {
+		// We have partial results - show warning but continue to display them
+		if h.metrics != nil {
+			h.metrics.ScanErrors.Add(1) // Still count as error for metrics
+		}
+		log.Printf("Scan partial for %s: %s, recovered %d findings in %v", parsed.FullPath, scanResult.PartialReason, len(scanResult.Findings), scanDuration)
+		sb.WriteEmptyLine()
+		report.WriteBoxTop(boxWidth)
+		report.WriteBoxLine(sb.Color(Yellow, "⚠  WARNING: PARTIAL RESULTS"), boxWidth)
+		report.WriteBoxLine(fmt.Sprintf("Scan %s", scanResult.PartialReason), boxWidth)
+		report.WriteBoxLine(fmt.Sprintf("Showing findings from scanned files"), boxWidth)
+		report.WriteBoxBottom(boxWidth)
+		sb.WriteEmptyLine()
+		// Continue to display partial results below
+	} else if err != nil {
+		// Complete failure with no results
 		if h.metrics != nil {
 			h.metrics.ScanErrors.Add(1)
 		}
 		reqLog.Error = fmt.Sprintf("scan error: %v", err)
+		log.Printf("Scan failed for %s after %v: %v", parsed.FullPath, scanDuration, err)
 		sb.WriteEmptyLine()
 		report.WriteBoxTop(boxWidth)
 		report.WriteBoxLine(sb.Color(Red, "ERROR: Scan failed"), boxWidth)
@@ -430,70 +524,113 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, parsed *P
 		h.metrics.RecordScanTime(scanDuration)
 	}
 
+	log.Printf("Scan completed for %s: %d findings (%d critical, %d high, %d medium, %d low) in %v",
+		parsed.FullPath, len(scanResult.Findings),
+		scanResult.CriticalCount, scanResult.HighCount,
+		scanResult.MediumCount, scanResult.LowCount, scanDuration)
 	sb.WriteProgressf("%s [git.vet] Scan complete!", IconSuccess)
 
 	// Step 4: Save scan results
 	dbScan := &db.Scan{
-		RepoID:         repo.ID,
-		CommitSHA:      repo.LastCommitSHA,
-		ResultsJSON:    scanResult.FindingsJSON,
-		CriticalCount:  scanResult.CriticalCount,
-		HighCount:      scanResult.HighCount,
-		MediumCount:    scanResult.MediumCount,
-		LowCount:       scanResult.LowCount,
-		InfoCount:      scanResult.InfoCount,
-		SecurityScore:  scanResult.SecurityScore,
-		FilesScanned:   scanResult.FilesScanned,
-		ScanDurationMS: scanResult.Duration.Milliseconds(),
+		RepoID:           repo.ID,
+		CommitSHA:        repo.LastCommitSHA,
+		ResultsJSON:      scanResult.FindingsJSON,
+		CriticalCount:    scanResult.CriticalCount,
+		HighCount:        scanResult.HighCount,
+		MediumCount:      scanResult.MediumCount,
+		LowCount:         scanResult.LowCount,
+		InfoCount:        scanResult.InfoCount,
+		SecurityScore:    scanResult.SecurityScore,
+		FilesScanned:     scanResult.FilesScanned,
+		ScanDurationMS:   scanResult.Duration.Milliseconds(),
+		ScanLevel:        string(scanResult.ScanLevel),
+		CachedFileCount:  scanResult.CachedFileCount,
+		ScannedFileCount: scanResult.ScannedFileCount,
+		IsPartial:        scanResult.IsPartial,
+		PartialReason:    scanResult.PartialReason,
 	}
 	h.db.CreateScan(dbScan)
 
 	// Update request log with successful scan ID
 	reqLog.ScanID = &dbScan.ID
+	reqLog.Success = true
 
 	// Step 5: Write report
-	h.writeScanReport(sb, report, parsed, repo, dbScan, boxWidth, false)
+	// Output format based on mode
+	if parsed.Mode == "json" {
+		h.writeJSONReport(sb, parsed, repo, dbScan)
+	} else {
+		h.writeScanReport(sb, report, parsed, repo, dbScan, boxWidth, false)
+	}
 }
 
 // writeScanReport writes the formatted scan report via sideband
 func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, parsed *ParsedPath, repo *cache.CachedRepo, scan *db.Scan, width int, cacheHit bool) {
 	sb.WriteEmptyLine()
 
-	// Header
-	report.WriteBoxTop(width)
-	report.WriteBoxLine(sb.Bold("GIT.VET SECURITY REPORT"), width)
-	report.WriteBoxLine(fmt.Sprintf("Repository: %s", parsed.FullPath), width)
-	report.WriteBoxLine(fmt.Sprintf("Commit: %s", truncate(scan.CommitSHA, 12)), width)
-	if repo.License != "" {
-		report.WriteBoxLine(fmt.Sprintf("License: %s", repo.License), width)
-	}
-	report.WriteBoxLine(fmt.Sprintf("Scanned: %d files in %.1fs", scan.FilesScanned, float64(scan.ScanDurationMS)/1000), width)
-	if cacheHit {
-		report.WriteBoxLine(sb.Color(Cyan, "(cached result)"), width)
+	// Show findings first (if any) so they appear before the summary
+	totalFindings := scan.CriticalCount + scan.HighCount + scan.MediumCount + scan.LowCount
+	if totalFindings > 0 && scan.ResultsJSON != "" {
+		// Parse findings from ResultsJSON
+		var findings []scanner.Finding
+		if err := json.Unmarshal([]byte(scan.ResultsJSON), &findings); err == nil {
+			// Sort by severity (Critical -> High -> Medium -> Low, worst first)
+			sortedFindings := SortFindingsBySeverity(findings)
+
+			// Show findings without box (cleaner look)
+			for _, f := range sortedFindings {
+				severityIcon := getSeverityIcon(sb, f.Severity)
+				severityLabel := strings.ToUpper(f.Severity)
+				shortRule := shortenRuleID(f.RuleID)
+
+				// Format: ⚠ HIGH: rule-name
+				sb.WriteProgress(fmt.Sprintf("%s %s: %s", severityIcon, severityLabel, shortRule))
+
+				// Show path with line number (indented)
+				pathWithLine := fmt.Sprintf("  %s:%d", f.Path, f.StartLine)
+				sb.WriteProgress(shortenPath(pathWithLine, width-2))
+
+				// Show message (indented)
+				msg := fmt.Sprintf("  %s", f.Message)
+				if len(msg) > width-2 {
+					msg = msg[:width-5] + "..."
+				}
+				sb.WriteProgress(msg)
+			}
+			sb.WriteEmptyLine()
+		}
 	}
 
-	// Security Score
-	report.WriteBoxMiddle(width)
+	// Main summary box
+	report.WriteBoxTop(width)
+
+	// Security Score - prominent display
 	grade := scanner.ScoreGrade(scan.SecurityScore)
 	var scoreColor string
+	var scoreIcon string
 	switch {
 	case scan.SecurityScore >= 90:
 		scoreColor = Green
+		scoreIcon = "✓"
 	case scan.SecurityScore >= 70:
 		scoreColor = Yellow
+		scoreIcon = "⚠"
 	case scan.SecurityScore >= 50:
 		scoreColor = Yellow
+		scoreIcon = "⚠"
 	default:
 		scoreColor = Red
+		scoreIcon = "✗"
 	}
-	scoreLine := fmt.Sprintf("Security Score: %s  %s",
-		sb.Color(scoreColor, fmt.Sprintf("%d/100", scan.SecurityScore)),
-		sb.Color(scoreColor, fmt.Sprintf("(%s)", grade)))
+	scoreLine := fmt.Sprintf("%s %s: %s",
+		sb.Color(scoreColor, scoreIcon),
+		sb.Color(scoreColor, "SECURITY SCORE"),
+		sb.Color(scoreColor, sb.Bold(fmt.Sprintf("%d/100 (%s)", scan.SecurityScore, grade))))
 	report.WriteBoxLine(scoreLine, width)
 
-	// Summary line
+	// Severity counts on same line
 	report.WriteBoxMiddle(width)
-	summaryLine := fmt.Sprintf("%s %d Critical   %s %d High   %s %d Medium   %s %d Low",
+	summaryLine := fmt.Sprintf("%s %d Critical    %s %d High    %s %d Medium    %s %d Low",
 		sb.Color(Red, IconCritical), scan.CriticalCount,
 		sb.Color(Yellow, IconHigh), scan.HighCount,
 		sb.Color(Blue, IconMedium), scan.MediumCount,
@@ -501,60 +638,85 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	)
 	report.WriteBoxLine(summaryLine, width)
 
-	// Show findings if any (from low to high priority so terminal scrolls to most important)
-	totalFindings := scan.CriticalCount + scan.HighCount + scan.MediumCount + scan.LowCount
-	if totalFindings > 0 && scan.ResultsJSON != "" {
-		report.WriteBoxMiddle(width)
-		report.WriteBoxLine(sb.Bold("FINDINGS:"), width)
-		report.WriteBoxLine("", width)
-
-		// Parse findings from ResultsJSON
-		var findings []scanner.Finding
-		if err := json.Unmarshal([]byte(scan.ResultsJSON), &findings); err == nil {
-			// Sort by severity (Low -> Medium -> High -> Critical for terminal scroll)
-			sortedFindings := sortFindingsBySeverity(findings)
-
-			// Show all findings
-			for i, f := range sortedFindings {
-				severityIcon := getSeverityIcon(sb, f.Severity)
-				// Truncate message if too long
-				msg := f.Message
-				if len(msg) > 50 {
-					msg = msg[:47] + "..."
-				}
-				report.WriteBoxLine(fmt.Sprintf("%s %s", severityIcon, f.RuleID), width)
-				report.WriteBoxLine(fmt.Sprintf("  %s:%d", f.Path, f.StartLine), width)
-				report.WriteBoxLine(fmt.Sprintf("  %s", msg), width)
-				if i < len(sortedFindings)-1 {
-					report.WriteBoxLine("", width)
-				}
-			}
-		}
-	}
-
-	// Report URL section
+	// Report URL
 	report.WriteBoxMiddle(width)
 	reportURL := fmt.Sprintf("https://git.vet/r/%s", truncate(scan.CommitSHA, 8))
-	report.WriteBoxLine(fmt.Sprintf("Full report: %s", reportURL), width)
-	report.WriteBoxLine("", width)
+	report.WriteBoxLine(fmt.Sprintf("Full report: %s", sb.Color(Cyan, reportURL)), width)
 
-	// QR Code - generate a real, scannable QR code linking to the report
-	qrLines := GenerateScaledQR(reportURL)
-	for _, line := range qrLines {
-		report.WriteBoxLineCentered(line, width)
-	}
-	report.WriteBoxLineCentered("^ Scan QR to view full report ^", width)
-
-	// Clone URL
-	report.WriteBoxMiddle(width)
+	// Clone command
 	cloneURL := fmt.Sprintf("https://%s/%s/%s", parsed.Host, parsed.Owner, parsed.Repo)
 	report.WriteBoxLine(fmt.Sprintf("To clone: git clone %s", cloneURL), width)
 
-	// Contact email
+	// Contact
 	report.WriteBoxMiddle(width)
 	report.WriteBoxLine(fmt.Sprintf("Questions? %s", sb.Color(Cyan, "gitvet@steele.red")), width)
 	report.WriteBoxBottom(width)
 
+	sb.WriteEmptyLine()
+}
+
+// writeJSONReport outputs scan results as JSON
+func (h *Handler) writeJSONReport(sb *SidebandWriter, parsed *ParsedPath, repo *cache.CachedRepo, scan *db.Scan) {
+	// Create JSON output structure
+	type JSONOutput struct {
+		Repository      string `json:"repository"`
+		CommitSHA       string `json:"commit_sha"`
+		License         string `json:"license,omitempty"`
+		SecurityScore   int    `json:"security_score"`
+		Grade           string `json:"grade"`
+		CriticalCount   int    `json:"critical_count"`
+		HighCount       int    `json:"high_count"`
+		MediumCount     int    `json:"medium_count"`
+		LowCount        int    `json:"low_count"`
+		InfoCount       int    `json:"info_count"`
+		FilesScanned    int    `json:"files_scanned"`
+		ScanDurationMS  int64  `json:"scan_duration_ms"`
+		ScanLevel       string `json:"scan_level,omitempty"`
+		IsPartial       bool   `json:"is_partial,omitempty"`
+		PartialReason   string `json:"partial_reason,omitempty"`
+		Findings        json.RawMessage `json:"findings"`
+		ReportURL       string `json:"report_url"`
+	}
+
+	// Prepare findings JSON
+	var findingsJSON json.RawMessage
+	if scan.ResultsJSON != "" {
+		findingsJSON = json.RawMessage(scan.ResultsJSON)
+	} else {
+		findingsJSON = json.RawMessage("[]")
+	}
+
+	// Build output
+	output := JSONOutput{
+		Repository:     parsed.FullPath,
+		CommitSHA:      scan.CommitSHA,
+		License:        repo.License,
+		SecurityScore:  scan.SecurityScore,
+		Grade:          scanner.ScoreGrade(scan.SecurityScore),
+		CriticalCount:  scan.CriticalCount,
+		HighCount:      scan.HighCount,
+		MediumCount:    scan.MediumCount,
+		LowCount:       scan.LowCount,
+		InfoCount:      scan.InfoCount,
+		FilesScanned:   scan.FilesScanned,
+		ScanDurationMS: scan.ScanDurationMS,
+		ScanLevel:      scan.ScanLevel,
+		IsPartial:      scan.IsPartial,
+		PartialReason:  scan.PartialReason,
+		Findings:       findingsJSON,
+		ReportURL:      fmt.Sprintf("https://git.vet/r/%s", truncate(scan.CommitSHA, 8)),
+	}
+
+	// Marshal to JSON
+	jsonBytes, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		sb.WriteError(fmt.Sprintf("Failed to generate JSON: %v", err))
+		return
+	}
+
+	// Write JSON output
+	sb.WriteEmptyLine()
+	sb.WriteProgress(string(jsonBytes))
 	sb.WriteEmptyLine()
 }
 
@@ -574,16 +736,16 @@ func getSeverityIcon(sb *SidebandWriter, severity string) string {
 	}
 }
 
-// sortFindingsBySeverity sorts findings from low to high priority
-// so terminal scrolls up to most important findings at the end
-func sortFindingsBySeverity(findings []scanner.Finding) []scanner.Finding {
+// SortFindingsBySeverity sorts findings from high to low priority
+// so most critical issues are displayed first
+func SortFindingsBySeverity(findings []scanner.Finding) []scanner.Finding {
 	// Create a copy to avoid modifying original
 	sorted := make([]scanner.Finding, len(findings))
 	copy(sorted, findings)
 
-	// Sort by severity priority (low first, critical last)
+	// Sort by severity priority (critical first, info last)
 	severityOrder := map[string]int{
-		"info": 0, "low": 1, "medium": 2, "high": 3, "warning": 3, "critical": 4, "error": 4,
+		"critical": 0, "error": 0, "high": 1, "warning": 1, "medium": 2, "low": 3, "info": 4,
 	}
 
 	for i := 0; i < len(sorted)-1; i++ {
@@ -597,6 +759,47 @@ func sortFindingsBySeverity(findings []scanner.Finding) []scanner.Finding {
 	}
 
 	return sorted
+}
+
+// shortenRuleID extracts the last meaningful segment from a rule ID
+// e.g., "javascript.browser.security.insecure-document-method.insecure-document-method" -> "insecure-document-method"
+func shortenRuleID(ruleID string) string {
+	parts := strings.Split(ruleID, ".")
+	if len(parts) == 0 {
+		return ruleID
+	}
+	// Return the last part, which is usually the most descriptive
+	return parts[len(parts)-1]
+}
+
+// shortenPath intelligently truncates a file path to show filename and line number
+// e.g., "src/main/resources/.../file.js:123" -> "file.js:123" or truncates middle
+func shortenPath(path string, maxLen int) string {
+	if len(path) <= maxLen {
+		return path
+	}
+
+	// Try to preserve filename and line number
+	lastSlash := strings.LastIndex(path, "/")
+	if lastSlash == -1 {
+		// No slashes, just truncate
+		if len(path) > maxLen {
+			return "..." + path[len(path)-maxLen+3:]
+		}
+		return path
+	}
+
+	filename := path[lastSlash+1:]
+	if len(filename) < maxLen-3 {
+		// Filename fits, show it with "..." prefix
+		return "..." + filename
+	}
+
+	// Filename itself is too long, truncate it
+	if len(filename) > maxLen {
+		return filename[:maxLen-3] + "..."
+	}
+	return filename
 }
 
 // writeRateLimitResponse writes a rate limit error via sideband-style output
@@ -764,4 +967,61 @@ func truncate(s string, length int) string {
 		return s
 	}
 	return s[:length]
+}
+
+// parseGitVersion extracts git version from User-Agent header
+// Examples:
+//   "git/2.39.0" -> "2.39.0"
+//   "git/2.39.0 (Apple Git-152)" -> "2.39.0"
+//   "libgit2/1.5.0" -> "1.5.0"
+//   "go-git/v5.4.2" -> "5.4.2"
+func parseGitVersion(userAgent string) string {
+	if userAgent == "" {
+		return ""
+	}
+
+	// Try to match common patterns
+	patterns := []string{
+		"git/",
+		"libgit2/",
+		"go-git/v",
+		"jgit/",
+	}
+
+	for _, pattern := range patterns {
+		if idx := strings.Index(userAgent, pattern); idx >= 0 {
+			start := idx + len(pattern)
+			version := userAgent[start:]
+
+			// Extract until space or end
+			if spaceIdx := strings.Index(version, " "); spaceIdx > 0 {
+				version = version[:spaceIdx]
+			}
+
+			return version
+		}
+	}
+
+	return ""
+}
+
+// serializeQueryParams converts URL query parameters to JSON string
+func serializeQueryParams(r *http.Request) string {
+	if len(r.URL.Query()) == 0 {
+		return ""
+	}
+
+	params := make(map[string]string)
+	for key, values := range r.URL.Query() {
+		if len(values) > 0 {
+			params[key] = values[0] // Take first value
+		}
+	}
+
+	jsonBytes, err := json.Marshal(params)
+	if err != nil {
+		return ""
+	}
+
+	return string(jsonBytes)
 }

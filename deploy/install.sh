@@ -84,6 +84,14 @@ chown gitvet:gitvet /opt/gitvet/git-vet-server
 chmod 755 /opt/gitvet/git-vet-server
 echo "Built and installed git-vet-server with execute permissions"
 
+# Install deployment scripts for future updates
+mkdir -p /opt/gitvet/scripts
+cp deploy/update.sh /opt/gitvet/scripts/update.sh
+cp deploy/reset_cache.sh /opt/gitvet/scripts/reset_cache.sh
+chmod 755 /opt/gitvet/scripts/update.sh
+chmod 755 /opt/gitvet/scripts/reset_cache.sh
+echo "Installed deployment scripts to /opt/gitvet/scripts/"
+
 # Install systemd service (note: EOF without quotes to allow variable expansion)
 cat > /etc/systemd/system/gitvet.service << EOF
 [Unit]
@@ -103,7 +111,9 @@ ExecStart=/opt/gitvet/git-vet-server \
     -listen :6633 \
     -db /var/lib/gitvet/data/gitvet.db \
     -cache-dir /var/lib/gitvet/cache \
-    -opengrep $SCANNER_PATH
+    -opengrep $SCANNER_PATH \
+    -scan-timeout 300 \
+    -reset-db=false
 Restart=always
 RestartSec=5
 
@@ -155,7 +165,17 @@ systemctl status gitvet --no-pager
 echo ""
 echo "git.vet is running on http://localhost:6633"
 echo ""
+echo "Management commands:"
+echo "  Update:       sudo /opt/gitvet/scripts/update.sh"
+echo "  Reset cache:  sudo /opt/gitvet/scripts/reset_cache.sh"
+echo "  View logs:    journalctl -u gitvet -f"
+echo ""
+echo "Database management:"
+echo "  Location:     /var/lib/gitvet/data/gitvet.db"
+echo "  Persistence:  Database persists across restarts (scan history preserved)"
+echo "  Manual reset: sudo rm /var/lib/gitvet/data/gitvet.db && sudo systemctl restart gitvet"
+echo ""
 echo "Next steps:"
 echo "1. Configure your Cloudflare tunnel to point git.vet -> localhost:6633"
-echo "2. Check logs: journalctl -u gitvet -f"
+echo "2. Test the service: curl http://localhost:6633/github.com/baocin/gitscan"
 echo ""

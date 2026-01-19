@@ -207,9 +207,18 @@ func (r *ReportWriter) WriteBoxMiddle(width int) error {
 
 // WriteBoxLine writes a line inside the box
 func (r *ReportWriter) WriteBoxLine(content string, width int) error {
-	// Calculate padding
+	// Calculate available space for content
+	maxContentWidth := width - 4 // 4 = 2 box chars + 2 spaces
 	contentLen := visibleLength(content)
-	padding := width - 4 - contentLen // 4 = 2 box chars + 2 spaces
+
+	// Truncate content if it's too long
+	if contentLen > maxContentWidth {
+		content = truncateWithEllipsis(content, maxContentWidth)
+		contentLen = visibleLength(content)
+	}
+
+	// Calculate padding
+	padding := width - 4 - contentLen
 	if padding < 0 {
 		padding = 0
 	}
@@ -274,4 +283,50 @@ func visibleLength(s string) int {
 		length++
 	}
 	return length
+}
+
+// truncateWithEllipsis truncates a string to maxLen visible characters,
+// preserving ANSI color codes and adding "..." at the end
+func truncateWithEllipsis(s string, maxLen int) string {
+	if maxLen < 3 {
+		return "..."
+	}
+
+	visLen := visibleLength(s)
+	if visLen <= maxLen {
+		return s
+	}
+
+	// We need to truncate. Build result preserving ANSI codes.
+	var result strings.Builder
+	inEscape := false
+	visCount := 0
+	targetLen := maxLen - 3 // Reserve space for "..."
+
+	for _, r := range s {
+		// Check for ANSI escape sequence
+		if r == '\033' {
+			inEscape = true
+			result.WriteRune(r)
+			continue
+		}
+		if inEscape {
+			result.WriteRune(r)
+			if r == 'm' {
+				inEscape = false
+			}
+			continue
+		}
+
+		// Regular character
+		if visCount < targetLen {
+			result.WriteRune(r)
+			visCount++
+		} else {
+			break
+		}
+	}
+
+	result.WriteString("...")
+	return result.String()
 }
