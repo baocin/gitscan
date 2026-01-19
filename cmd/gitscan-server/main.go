@@ -34,11 +34,11 @@ var (
 func main() {
 	// Parse command line flags
 	var (
-		listenAddr        = flag.String("listen", ":80", "HTTP listen address")
-		tlsAddr           = flag.String("tls-listen", ":443", "HTTPS listen address")
+		listenAddr        = flag.String("listen", "0.0.0.0:80", "HTTP listen address")
+		tlsAddr           = flag.String("tls-listen", "0.0.0.0:443", "HTTPS listen address")
 		tlsCert           = flag.String("tls-cert", "", "TLS certificate file")
 		tlsKey            = flag.String("tls-key", "", "TLS private key file")
-		sshListenAddr     = flag.String("ssh-listen", ":22", "SSH listen address for git protocol")
+		sshListenAddr     = flag.String("ssh-listen", "0.0.0.0:22", "SSH listen address for git protocol")
 		sshHostKeyPath    = flag.String("ssh-host-key", "/var/lib/gitvet/ssh_host_key", "Path to SSH host key")
 		enableSSH         = flag.Bool("enable-ssh", true, "Enable SSH server for git clone ssh://")
 		dbPath            = flag.String("db", "gitscan.db", "SQLite database path")
