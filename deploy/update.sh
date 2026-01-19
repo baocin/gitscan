@@ -197,6 +197,8 @@ After=network.target
 Type=simple
 User=gitvet
 Group=gitvet
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 WorkingDirectory=/opt/gitvet
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 Environment="XDG_CACHE_HOME=/var/lib/gitvet/cache"
