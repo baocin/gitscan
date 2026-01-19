@@ -1,6 +1,8 @@
 package cache
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -40,6 +42,64 @@ func (e *RepoError) Error() string {
 
 func (e *RepoError) Unwrap() error {
 	return e.Type
+}
+
+// gitLogWriter streams git command output to the log in real-time
+// while also capturing it for error analysis
+type gitLogWriter struct {
+	prefix string
+	buffer bytes.Buffer
+	mu     sync.Mutex
+}
+
+// newGitLogWriter creates a new git log writer with the given prefix
+func newGitLogWriter(prefix string) *gitLogWriter {
+	return &gitLogWriter{prefix: prefix}
+}
+
+// Write implements io.Writer, logging each complete line
+func (w *gitLogWriter) Write(p []byte) (n int, err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// Capture for later error analysis
+	w.buffer.Write(p)
+
+	// Log each line as it comes in
+	scanner := bufio.NewScanner(bytes.NewReader(p))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line != "" {
+			log.Printf("[%s] %s", w.prefix, line)
+		}
+	}
+
+	return len(p), nil
+}
+
+// String returns the captured output
+func (w *gitLogWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buffer.String()
+}
+
+// runGitWithLogging executes a git command and streams output to logs in real-time
+// Returns the combined output and any error
+func runGitWithLogging(ctx context.Context, args []string, prefix string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+
+	// Create log writer that captures and logs output
+	logWriter := newGitLogWriter(prefix)
+
+	// Send both stdout and stderr to the log writer
+	cmd.Stdout = logWriter
+	cmd.Stderr = logWriter
+
+	err := cmd.Run()
+	output := logWriter.String()
+
+	return output, err
 }
 
 // classifyCloneError analyzes git clone output and returns a classified error
@@ -295,9 +355,9 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 	}
 
 	args = append(args, repoURL, localPath)
-	cmd := exec.CommandContext(ctx, "git", args...)
 
-	output, err := cmd.CombinedOutput()
+	// Execute git clone with real-time logging
+	output, err := runGitWithLogging(ctx, args, "git clone")
 	cloneDuration := time.Since(cloneStart)
 
 	if err != nil {
@@ -402,9 +462,9 @@ func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn 
 		}
 
 		args = append(args, repoURL, dbRepo.LocalPath)
-		cmd := exec.CommandContext(cloneCtx, "git", args...)
 
-		output, err := cmd.CombinedOutput()
+		// Execute git clone with real-time logging
+		output, err := runGitWithLogging(cloneCtx, args, "git clone")
 		cloneDuration := time.Since(cloneStart)
 
 		if err != nil {
@@ -514,22 +574,25 @@ func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn 
 	ctx, cancel := context.WithTimeout(ctx, c.fetchTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "git", "-C", dbRepo.LocalPath, "fetch", "--depth", "1", "origin")
-	if output, err := cmd.CombinedOutput(); err != nil {
+	// Execute git fetch with real-time logging
+	fetchArgs := []string{"-C", dbRepo.LocalPath, "fetch", "--depth", "1", "origin"}
+	output, err := runGitWithLogging(ctx, fetchArgs, "git fetch")
+	if err != nil {
 		fetchDuration := time.Since(fetchStart)
 		if ctx.Err() == context.DeadlineExceeded {
 			log.Printf("[cache] Fetch timeout for %s after %v", dbRepo.URL, fetchDuration)
 			return nil, fmt.Errorf("fetch timed out after %v", c.fetchTimeout)
 		}
-		log.Printf("[cache] Fetch failed for %s after %v: %v (git output: %s)", dbRepo.URL, fetchDuration, err, truncateOutput(string(output), 200))
-		return nil, fmt.Errorf("fetch failed: %s - %w", string(output), err)
+		log.Printf("[cache] Fetch failed for %s after %v: %v (git output: %s)", dbRepo.URL, fetchDuration, err, truncateOutput(output, 200))
+		return nil, fmt.Errorf("fetch failed: %s - %w", output, err)
 	}
 
-	// Reset to latest
-	cmd = exec.CommandContext(ctx, "git", "-C", dbRepo.LocalPath, "reset", "--hard", "origin/HEAD")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("[cache] Reset failed for %s: %v (git output: %s)", dbRepo.URL, err, truncateOutput(string(output), 200))
-		return nil, fmt.Errorf("reset failed: %s - %w", string(output), err)
+	// Execute git reset with real-time logging
+	resetArgs := []string{"-C", dbRepo.LocalPath, "reset", "--hard", "origin/HEAD"}
+	output, err = runGitWithLogging(ctx, resetArgs, "git reset")
+	if err != nil {
+		log.Printf("[cache] Reset failed for %s: %v (git output: %s)", dbRepo.URL, err, truncateOutput(output, 200))
+		return nil, fmt.Errorf("reset failed: %s - %w", output, err)
 	}
 
 	fetchDuration := time.Since(fetchStart)
@@ -591,14 +654,15 @@ func (c *RepoCache) checkRemoteHead(ctx context.Context, repoURL string) (string
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "git", "ls-remote", repoURL, "HEAD")
-	output, err := cmd.Output()
+	// Execute git ls-remote with real-time logging
+	lsRemoteArgs := []string{"ls-remote", repoURL, "HEAD"}
+	output, err := runGitWithLogging(ctx, lsRemoteArgs, "git ls-remote")
 	if err != nil {
 		return "", fmt.Errorf("git ls-remote failed: %w", err)
 	}
 
 	// Output format: "commit-sha\tHEAD\n"
-	parts := strings.Fields(string(output))
+	parts := strings.Fields(output)
 	if len(parts) < 1 {
 		return "", fmt.Errorf("unexpected ls-remote output: %s", output)
 	}
