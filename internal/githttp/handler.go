@@ -307,6 +307,18 @@ func checkClientDisconnected(ctx context.Context) bool {
 	}
 }
 
+// PerformScanSSH performs a scan for SSH git clone (without HTTP request)
+func (h *Handler) PerformScanSSH(ctx context.Context, sb *SidebandWriter, parsed *ParsedPath, clientIP string, userAgent string, startTime time.Time, isPrivate bool, skipCache bool) {
+	// Create a minimal fake HTTP request for logging purposes
+	r := &http.Request{
+		Method: "SSH",
+		Header: http.Header{
+			"User-Agent": []string{userAgent},
+		},
+	}
+	h.performScan(ctx, sb, r, parsed, clientIP, startTime, isPrivate, skipCache)
+}
+
 // performScan fetches the repo, scans it, and writes results via sideband
 func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.Request, parsed *ParsedPath, clientIP string, startTime time.Time, isPrivate bool, skipCache bool) {
 	report := NewReportWriter(sb)

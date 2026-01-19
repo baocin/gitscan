@@ -79,10 +79,10 @@ cd /tmp
 if [ -d "gitscan" ]; then rm -rf gitscan; fi
 git clone https://github.com/baocin/gitscan.git
 cd gitscan
-go build -o /opt/gitvet/git-vet-server ./cmd/gitscan-server
-chown gitvet:gitvet /opt/gitvet/git-vet-server
-chmod 755 /opt/gitvet/git-vet-server
-echo "Built and installed git-vet-server with execute permissions"
+go build -o /opt/gitvet/gitvet-server ./cmd/gitscan-server
+chown gitvet:gitvet /opt/gitvet/gitvet-server
+chmod 755 /opt/gitvet/gitvet-server
+echo "Built and installed gitvet-server with execute permissions"
 
 # Install deployment scripts for future updates
 mkdir -p /opt/gitvet/scripts
@@ -107,8 +107,10 @@ Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 Environment="XDG_CACHE_HOME=/var/lib/gitvet/cache"
 Environment="XDG_CONFIG_HOME=/var/lib/gitvet"
 Environment="SEMGREP_SEND_METRICS=off"
-ExecStart=/opt/gitvet/git-vet-server \
+ExecStart=/opt/gitvet/gitvet-server \
     -listen :6633 \
+    -ssh-listen :22 \
+    -enable-ssh=true \
     -db /var/lib/gitvet/data/gitvet.db \
     -cache-dir /var/lib/gitvet/cache \
     -opengrep $SCANNER_PATH \
@@ -138,11 +140,11 @@ else
     echo "✗ WARNING: gitvet user cannot access $SCANNER_PATH"
 fi
 
-echo "Checking gitvet user can execute git-vet-server..."
-if sudo -u gitvet test -x /opt/gitvet/git-vet-server; then
-    echo "✓ gitvet user can execute /opt/gitvet/git-vet-server"
+echo "Checking gitvet user can execute gitvet-server..."
+if sudo -u gitvet test -x /opt/gitvet/gitvet-server; then
+    echo "✓ gitvet user can execute /opt/gitvet/gitvet-server"
 else
-    echo "✗ WARNING: gitvet user cannot execute /opt/gitvet/git-vet-server"
+    echo "✗ WARNING: gitvet user cannot execute /opt/gitvet/gitvet-server"
 fi
 
 echo "Checking home directory permissions..."

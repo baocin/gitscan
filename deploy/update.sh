@@ -9,7 +9,7 @@ set -o pipefail  # Catch pipe failures, but don't use -e
 
 TEMP_DIR="/tmp/gitscan"
 INSTALL_DIR="/opt/gitvet"
-BINARY_NAME="git-vet-server"
+BINARY_NAME="gitvet-server"
 SERVICE_NAME="gitvet"
 BACKUP_SUFFIX=".backup.$(date +%s)"
 
@@ -153,6 +153,49 @@ fi
 
 if ! chown gitvet:gitvet "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null; then
     log_warn "Failed to set ownership to gitvet:gitvet, file may still be owned by root"
+fi
+
+# Update systemd service configuration
+log_info "Updating systemd service configuration..."
+SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
+if [ -f "$SERVICE_FILE" ]; then
+    # Detect scanner (opengrep or semgrep)
+    SCANNER_PATH="opengrep"
+    if ! command -v opengrep &> /dev/null; then
+        if command -v semgrep &> /dev/null; then
+            SCANNER_PATH="semgrep"
+        fi
+    fi
+
+    # Update ExecStart line with new binary name and SSH support
+    if grep -q "^ExecStart=" "$SERVICE_FILE"; then
+        # Build the new ExecStart line
+        NEW_EXEC_START="ExecStart=$INSTALL_DIR/$BINARY_NAME -listen :6633 -ssh-listen :22 -enable-ssh=true -db /var/lib/gitvet/data/gitvet.db -cache-dir /var/lib/gitvet/cache -opengrep $SCANNER_PATH"
+
+        # Create backup
+        cp "$SERVICE_FILE" "$SERVICE_FILE.bak"
+
+        # Handle multi-line ExecStart: remove ExecStart and all continuation lines, then insert new one
+        # This matches from ^ExecStart= to the first line NOT ending with backslash
+        sed -i '/^ExecStart=/,/[^\\]$/{
+            /^ExecStart=/c\
+'"$NEW_EXEC_START"'
+            /^ExecStart=/!d
+        }' "$SERVICE_FILE"
+
+        if [ $? -eq 0 ]; then
+            log_info "Updated systemd service to use $BINARY_NAME with SSH support"
+            systemctl daemon-reload
+            rm -f "$SERVICE_FILE.bak"
+        else
+            log_warn "Failed to update systemd service file, restoring backup..."
+            mv "$SERVICE_FILE.bak" "$SERVICE_FILE"
+        fi
+    else
+        log_warn "ExecStart line not found in $SERVICE_FILE, skipping service update"
+    fi
+else
+    log_warn "Service file $SERVICE_FILE not found, skipping service update"
 fi
 
 # Clear cache and reset database if needed

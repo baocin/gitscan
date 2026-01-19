@@ -20,6 +20,7 @@ import (
 	"github.com/baocin/gitscan/internal/queue"
 	"github.com/baocin/gitscan/internal/ratelimit"
 	"github.com/baocin/gitscan/internal/scanner"
+	"github.com/baocin/gitscan/internal/sshserver"
 	"github.com/baocin/gitscan/web"
 )
 
@@ -37,6 +38,9 @@ func main() {
 		tlsAddr           = flag.String("tls-listen", ":8443", "HTTPS listen address")
 		tlsCert           = flag.String("tls-cert", "", "TLS certificate file")
 		tlsKey            = flag.String("tls-key", "", "TLS private key file")
+		sshListenAddr     = flag.String("ssh-listen", ":22", "SSH listen address for git protocol")
+		sshHostKeyPath    = flag.String("ssh-host-key", "/var/lib/gitvet/ssh_host_key", "Path to SSH host key")
+		enableSSH         = flag.Bool("enable-ssh", true, "Enable SSH server for git clone ssh://")
 		dbPath            = flag.String("db", "gitscan.db", "SQLite database path")
 		cacheDir          = flag.String("cache-dir", "/tmp/gitscan-cache", "Repository cache directory")
 		maxFileSize       = flag.Int64("max-file-size", 1048576, "Max file size to download in bytes (default: 1MB)")
@@ -216,7 +220,7 @@ func main() {
 	}
 
 	// Start servers
-	errChan := make(chan error, 2)
+	errChan := make(chan error, 3) // HTTP + HTTPS + SSH
 
 	// Start HTTP server
 	go func() {
@@ -244,6 +248,29 @@ func main() {
 		}()
 	}
 
+	// Start SSH server if enabled
+	var sshSrv *sshserver.Server
+	if *enableSSH {
+		sshConfig := sshserver.Config{
+			ListenAddr:  *sshListenAddr,
+			HostKeyPath: *sshHostKeyPath,
+		}
+		var err error
+		sshSrv, err = sshserver.New(sshConfig, gitHandler, database)
+		if err != nil {
+			log.Fatalf("Failed to create SSH server: %v", err)
+		}
+
+		go func() {
+			log.Printf("SSH server listening on %s", *sshListenAddr)
+			if err := sshSrv.Listen(); err != nil {
+				errChan <- fmt.Errorf("SSH server error: %w", err)
+			}
+		}()
+	} else {
+		log.Printf("SSH server disabled")
+	}
+
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -265,6 +292,11 @@ func main() {
 	if httpsServer != nil {
 		if err := httpsServer.Shutdown(ctx); err != nil {
 			log.Printf("HTTPS server shutdown error: %v", err)
+		}
+	}
+	if sshSrv != nil {
+		if err := sshSrv.Close(); err != nil {
+			log.Printf("SSH server shutdown error: %v", err)
 		}
 	}
 
