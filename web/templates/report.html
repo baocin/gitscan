@@ -22,6 +22,7 @@
             --orange: #db6d28;
             --red: #f85149;
             --purple: #a371f7;
+            --magenta: #d946ef;
         }
 
         * {
@@ -151,6 +152,11 @@
             background: rgba(219, 109, 40, 0.1);
         }
 
+        .score-circle.score-d {
+            border-color: var(--red);
+            background: rgba(248, 81, 73, 0.08);
+        }
+
         .score-circle.score-f {
             border-color: var(--red);
             background: rgba(248, 81, 73, 0.1);
@@ -165,6 +171,7 @@
         .score-circle.score-a .score-value { color: var(--green); }
         .score-circle.score-b .score-value { color: var(--yellow); }
         .score-circle.score-c .score-value { color: var(--orange); }
+        .score-circle.score-d .score-value { color: var(--red); }
         .score-circle.score-f .score-value { color: var(--red); }
 
         .score-grade {
@@ -176,6 +183,7 @@
         .score-circle.score-a .score-grade { color: var(--green); }
         .score-circle.score-b .score-grade { color: var(--yellow); }
         .score-circle.score-c .score-grade { color: var(--orange); }
+        .score-circle.score-d .score-grade { color: var(--red); }
         .score-circle.score-f .score-grade { color: var(--red); }
 
         .score-label {
@@ -220,6 +228,11 @@
             background: rgba(63, 185, 80, 0.1);
         }
 
+        .summary-card.info-leak {
+            border-color: var(--magenta);
+            background: rgba(217, 70, 239, 0.1);
+        }
+
         .summary-count {
             font-size: 2.5rem;
             font-weight: 700;
@@ -227,6 +240,7 @@
             margin-bottom: 4px;
         }
 
+        .summary-card.info-leak .summary-count { color: var(--magenta); }
         .summary-card.critical .summary-count { color: var(--red); }
         .summary-card.high .summary-count { color: var(--orange); }
         .summary-card.medium .summary-count { color: var(--yellow); }
@@ -389,6 +403,11 @@
             color: var(--accent);
         }
 
+        .severity-badge.info-leak {
+            background: rgba(217, 70, 239, 0.2);
+            color: var(--magenta);
+        }
+
         .finding-location {
             padding: 12px 20px;
             background: var(--bg-tertiary);
@@ -523,14 +542,18 @@
             </div>
 
             <div class="score-display">
-                <div class="score-circle {{if ge .SecurityScore 90}}score-a{{else if ge .SecurityScore 70}}score-b{{else if ge .SecurityScore 50}}score-c{{else}}score-f{{end}}">
+                <div class="score-circle {{if le .SecurityScore 20}}score-a{{else if le .SecurityScore 40}}score-b{{else if le .SecurityScore 60}}score-c{{else}}score-f{{end}}">
                     <span class="score-value">{{.SecurityScore}}</span>
                     <span class="score-grade">{{.SecurityGrade}}</span>
                 </div>
-                <div class="score-label">Security Score</div>
+                <div class="score-label">Run Risk</div>
             </div>
 
             <div class="summary-grid">
+                <div class="summary-card info-leak">
+                    <div class="summary-count">{{.InfoLeakCount}}</div>
+                    <div class="summary-label">Info Leak</div>
+                </div>
                 <div class="summary-card critical">
                     <div class="summary-count">{{.CriticalCount}}</div>
                     <div class="summary-label">Critical</div>
@@ -556,6 +579,40 @@
                 </div>
 
                 <div class="severity-section">
+                    {{if .InfoLeakFindings}}
+                    <details {{if gt .InfoLeakCount 0}}open{{end}}>
+                        <summary>
+                            <div class="severity-title">
+                                <span class="severity-icon">🚨</span>
+                                <span style="color: var(--magenta);">Info Leak</span>
+                                <span class="severity-count" style="color: var(--magenta);">{{.InfoLeakCount}}</span>
+                            </div>
+                            <span class="expand-icon">▼</span>
+                        </summary>
+                        <div class="findings-container">
+                            {{range .InfoLeakFindings}}
+                            <div class="finding-card">
+                                <div class="finding-header">
+                                    <div class="finding-title">
+                                        <div class="finding-rule">{{.RuleID}}</div>
+                                        <div class="finding-message">{{.Message}}</div>
+                                    </div>
+                                    <span class="severity-badge {{.Severity | lower}}">{{.Severity}}</span>
+                                </div>
+                                <div class="finding-location">
+                                    <a href="#">{{.Path}}:{{.StartLine}}</a>
+                                </div>
+                                {{if .Snippet}}
+                                <div class="finding-snippet">
+                                    <pre><span class="line-number">{{.StartLine}}</span>{{.Snippet}}</pre>
+                                </div>
+                                {{end}}
+                            </div>
+                            {{end}}
+                        </div>
+                    </details>
+                    {{end}}
+
                     {{if .CriticalFindings}}
                     <details {{if gt .CriticalCount 0}}open{{end}}>
                         <summary>

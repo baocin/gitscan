@@ -195,15 +195,17 @@ type ReportData struct {
 	FilesScanned     int
 	ScanDuration     string
 	License          string
+	InfoLeakCount    int
 	CriticalCount    int
 	HighCount        int
 	MediumCount      int
 	LowCount         int
 	InfoCount        int
-	SecurityScore    int    // 0-100 weighted security score
-	SecurityGrade    string // A, B, C, D, F
+	SecurityScore    int    // 0-100 run risk score (0=safe, 100=dangerous)
+	SecurityGrade    string // A, B, C, D, F (inverted: A=low risk, F=high risk)
 	TotalFindings    int
 	Findings         []scanner.Finding
+	InfoLeakFindings []scanner.Finding
 	CriticalFindings []scanner.Finding
 	HighFindings     []scanner.Finding
 	MediumFindings   []scanner.Finding
@@ -262,6 +264,7 @@ func (h *Handler) ServeReport(w http.ResponseWriter, r *http.Request) {
 			data.FilesScanned = scan.FilesScanned
 			data.ScanDuration = formatDuration(time.Duration(scan.ScanDurationMS) * time.Millisecond)
 			data.License = scan.License
+			data.InfoLeakCount = scan.InfoLeakCount
 			data.CriticalCount = scan.CriticalCount
 			data.HighCount = scan.HighCount
 			data.MediumCount = scan.MediumCount
@@ -269,7 +272,7 @@ func (h *Handler) ServeReport(w http.ResponseWriter, r *http.Request) {
 			data.InfoCount = scan.InfoCount
 			data.SecurityScore = scan.SecurityScore
 			data.SecurityGrade = scanner.RiskGrade(scan.SecurityScore)
-			data.TotalFindings = scan.CriticalCount + scan.HighCount + scan.MediumCount + scan.LowCount
+			data.TotalFindings = scan.InfoLeakCount + scan.CriticalCount + scan.HighCount + scan.MediumCount + scan.LowCount
 
 			// Parse findings from results_json
 			if scan.ResultsJSON != "" {
@@ -281,6 +284,8 @@ func (h *Handler) ServeReport(w http.ResponseWriter, r *http.Request) {
 					// Group findings by severity for collapsible sections
 					for _, finding := range data.Findings {
 						switch strings.ToUpper(finding.Severity) {
+						case "INFO-LEAK":
+							data.InfoLeakFindings = append(data.InfoLeakFindings, finding)
 						case "CRITICAL":
 							data.CriticalFindings = append(data.CriticalFindings, finding)
 						case "HIGH":
