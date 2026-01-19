@@ -24,6 +24,7 @@ type Config struct {
 	PrivateRepoDelaySeconds int    // Countdown delay for private repos (default: 10)
 	StripeLink              string // Link to paid tier
 	MaxRepoSizeKB           int64  // Max repo size in KB
+	AllowCustomHosts        bool   // Allow custom git hosts (self-hosted repos). Default: false (only github.com, gitlab.com, bitbucket.org)
 }
 
 // DefaultConfig returns default handler configuration
@@ -32,6 +33,7 @@ func DefaultConfig() Config {
 		PrivateRepoDelaySeconds: 10,
 		StripeLink:              "https://git.vet/pricing",
 		MaxRepoSizeKB:           512000, // 500MB
+		AllowCustomHosts:        false,  // Strict: only known git hosts by default
 	}
 }
 
@@ -80,6 +82,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	parsed, err := ParseRepoPathFull(r.URL.Path)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Validate host for security (block dangerous IPs, restrict to known hosts unless configured)
+	hostValidationCfg := HostValidationConfig{
+		AllowCustomHosts: h.config.AllowCustomHosts,
+	}
+	if err := ValidateHost(parsed.Host, hostValidationCfg); err != nil {
+		log.Printf("[SECURITY] Blocked request from %s: %v", clientIP, err)
+		http.Error(w, fmt.Sprintf("Security: %v", err), http.StatusForbidden)
 		return
 	}
 

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"net"
 	"strconv"
 	"strings"
 )
@@ -116,6 +117,93 @@ var supportedHosts = map[string]bool{
 	"github.com":    true,
 	"gitlab.com":    true,
 	"bitbucket.org": true,
+}
+
+// HostValidationConfig controls host validation behavior
+type HostValidationConfig struct {
+	AllowCustomHosts bool // If true, allow hosts not in supportedHosts (but still block dangerous IPs)
+}
+
+// DefaultHostValidationConfig returns strict validation (known hosts only)
+func DefaultHostValidationConfig() HostValidationConfig {
+	return HostValidationConfig{
+		AllowCustomHosts: false,
+	}
+}
+
+// isIPAddress checks if a string is an IP address (IPv4 or IPv6)
+func isIPAddress(host string) bool {
+	// Remove port if present
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return net.ParseIP(host) != nil
+}
+
+// isDangerousIP checks if an IP address is dangerous (localhost, private, link-local)
+// Returns: (isDangerous, reason)
+func isDangerousIP(host string) (bool, string) {
+	// Remove port if present
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false, "" // Not an IP
+	}
+
+	// Check for loopback (localhost)
+	if ip.IsLoopback() {
+		return true, "loopback addresses (localhost/127.0.0.0/8/::1) are blocked to prevent SSRF attacks"
+	}
+
+	// Check for private networks
+	if ip.IsPrivate() {
+		return true, "private network addresses (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) are blocked. Use --allow-custom-hosts if you need to scan self-hosted repos on private networks"
+	}
+
+	// Check for link-local
+	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true, "link-local addresses are blocked"
+	}
+
+	// Check for unspecified (0.0.0.0, ::)
+	if ip.IsUnspecified() {
+		return true, "unspecified addresses (0.0.0.0, ::) are blocked"
+	}
+
+	return false, ""
+}
+
+// ValidateHost validates a git host according to security policy
+// Returns error if host is not allowed or is dangerous
+func ValidateHost(host string, config HostValidationConfig) error {
+	// Always block "localhost" explicitly (it's not an IP, so ParseIP won't catch it)
+	if host == "localhost" {
+		return fmt.Errorf("blocked dangerous host: loopback addresses (localhost/127.0.0.0/8/::1) are blocked to prevent SSRF attacks")
+	}
+
+	// Always block dangerous IPs first, regardless of config
+	if isDangerous, reason := isDangerousIP(host); isDangerous {
+		return fmt.Errorf("blocked dangerous host: %s", reason)
+	}
+
+	// If custom hosts are allowed, any non-dangerous host is OK
+	if config.AllowCustomHosts {
+		return nil
+	}
+
+	// Strict mode: only allow known hosts
+	if !supportedHosts[host] {
+		// Provide helpful error for IP addresses
+		if isIPAddress(host) {
+			return fmt.Errorf("IP addresses are not allowed (got %s). Use --allow-custom-hosts to enable self-hosted repos. Supported hosts: github.com, gitlab.com, bitbucket.org", host)
+		}
+		return fmt.Errorf("unsupported git host: %s (supported: github.com, gitlab.com, bitbucket.org). Use --allow-custom-hosts to enable self-hosted repos", host)
+	}
+
+	return nil
 }
 
 // ParseRepoPath parses a git repository path from the URL

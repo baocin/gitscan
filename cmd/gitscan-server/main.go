@@ -33,18 +33,19 @@ var (
 func main() {
 	// Parse command line flags
 	var (
-		listenAddr   = flag.String("listen", ":6633", "HTTP listen address")
-		tlsAddr      = flag.String("tls-listen", ":8443", "HTTPS listen address")
-		tlsCert      = flag.String("tls-cert", "", "TLS certificate file")
-		tlsKey       = flag.String("tls-key", "", "TLS private key file")
-		dbPath       = flag.String("db", "gitscan.db", "SQLite database path")
-		cacheDir     = flag.String("cache-dir", "/tmp/gitscan-cache", "Repository cache directory")
-		maxFileSize  = flag.Int64("max-file-size", 1048576, "Max file size to download in bytes (default: 1MB)")
-		openGrepPath = flag.String("opengrep", "opengrep", "Path to opengrep binary")
-		rulesPath    = flag.String("rules", "", "Path to opengrep rules directory")
-		scanTimeout  = flag.Int("scan-timeout", 180, "Scan timeout in seconds (default: 180s/3min)")
-		resetDB      = flag.Bool("reset-db", true, "Reset database on startup (default: true)")
-		showVersion  = flag.Bool("version", false, "Show version and exit")
+		listenAddr        = flag.String("listen", ":6633", "HTTP listen address")
+		tlsAddr           = flag.String("tls-listen", ":8443", "HTTPS listen address")
+		tlsCert           = flag.String("tls-cert", "", "TLS certificate file")
+		tlsKey            = flag.String("tls-key", "", "TLS private key file")
+		dbPath            = flag.String("db", "gitscan.db", "SQLite database path")
+		cacheDir          = flag.String("cache-dir", "/tmp/gitscan-cache", "Repository cache directory")
+		maxFileSize       = flag.Int64("max-file-size", 1048576, "Max file size to download in bytes (default: 1MB)")
+		openGrepPath      = flag.String("opengrep", "opengrep", "Path to opengrep binary")
+		rulesPath         = flag.String("rules", "", "Path to opengrep rules directory")
+		scanTimeout       = flag.Int("scan-timeout", 180, "Scan timeout in seconds (default: 180s/3min)")
+		resetDB           = flag.Bool("reset-db", true, "Reset database on startup (default: true)")
+		showVersion       = flag.Bool("version", false, "Show version and exit")
+		allowCustomHosts  = flag.Bool("allow-custom-hosts", false, "Allow custom git hosts (self-hosted repos). Default: only github.com, gitlab.com, bitbucket.org")
 	)
 	flag.Parse()
 
@@ -115,6 +116,12 @@ func main() {
 
 	// Create git HTTP handler
 	handlerCfg := githttp.DefaultConfig()
+	handlerCfg.AllowCustomHosts = *allowCustomHosts
+	if *allowCustomHosts {
+		log.Printf("Custom hosts enabled: self-hosted repos allowed (dangerous IPs still blocked)")
+	} else {
+		log.Printf("Custom hosts disabled: only github.com, gitlab.com, bitbucket.org allowed")
+	}
 	gitHandler := githttp.NewHandler(database, repoCache, scan, limiter, preflightChecker, queueManager, metricsCollector, handlerCfg)
 
 	// Create web handler for marketing pages

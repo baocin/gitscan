@@ -294,3 +294,275 @@ func searchString(s, substr string) bool {
 	}
 	return false
 }
+
+// TestValidateHost tests the host validation function
+func TestValidateHost(t *testing.T) {
+	tests := []struct {
+		name             string
+		host             string
+		allowCustomHosts bool
+		wantErr          bool
+		errContains      string
+	}{
+		// Known hosts (should always pass)
+		{
+			name:             "github.com allowed (strict mode)",
+			host:             "github.com",
+			allowCustomHosts: false,
+			wantErr:          false,
+		},
+		{
+			name:             "gitlab.com allowed (strict mode)",
+			host:             "gitlab.com",
+			allowCustomHosts: false,
+			wantErr:          false,
+		},
+		{
+			name:             "bitbucket.org allowed (strict mode)",
+			host:             "bitbucket.org",
+			allowCustomHosts: false,
+			wantErr:          false,
+		},
+
+		// Custom hosts (strict vs permissive)
+		{
+			name:             "custom host blocked (strict mode)",
+			host:             "git.example.com",
+			allowCustomHosts: false,
+			wantErr:          true,
+			errContains:      "unsupported git host",
+		},
+		{
+			name:             "custom host allowed (permissive mode)",
+			host:             "git.example.com",
+			allowCustomHosts: true,
+			wantErr:          false,
+		},
+		{
+			name:             "self-hosted gitea blocked (strict mode)",
+			host:             "gitea.company.com",
+			allowCustomHosts: false,
+			wantErr:          true,
+			errContains:      "Use --allow-custom-hosts",
+		},
+		{
+			name:             "self-hosted gitea allowed (permissive mode)",
+			host:             "gitea.company.com",
+			allowCustomHosts: true,
+			wantErr:          false,
+		},
+
+		// Localhost / loopback (always blocked)
+		{
+			name:             "localhost blocked (strict mode)",
+			host:             "localhost",
+			allowCustomHosts: false,
+			wantErr:          true,
+			errContains:      "loopback",
+		},
+		{
+			name:             "localhost blocked (permissive mode)",
+			host:             "localhost",
+			allowCustomHosts: true,
+			wantErr:          true,
+			errContains:      "loopback",
+		},
+		{
+			name:             "127.0.0.1 blocked (strict mode)",
+			host:             "127.0.0.1",
+			allowCustomHosts: false,
+			wantErr:          true,
+			errContains:      "loopback",
+		},
+		{
+			name:             "127.0.0.1 blocked (permissive mode)",
+			host:             "127.0.0.1",
+			allowCustomHosts: true,
+			wantErr:          true,
+			errContains:      "loopback",
+		},
+		{
+			name:             "127.1.2.3 blocked (loopback range)",
+			host:             "127.1.2.3",
+			allowCustomHosts: true,
+			wantErr:          true,
+			errContains:      "loopback",
+		},
+		{
+			name:             "::1 blocked (IPv6 loopback)",
+			host:             "::1",
+			allowCustomHosts: true,
+			wantErr:          true,
+			errContains:      "loopback",
+		},
+
+		// Private networks (always blocked)
+		{
+			name:             "10.0.0.1 blocked (private)",
+			host:             "10.0.0.1",
+			allowCustomHosts: true,
+			wantErr:          true,
+			errContains:      "private network",
+		},
+		{
+			name:             "172.16.0.1 blocked (private)",
+			host:             "172.16.0.1",
+			allowCustomHosts: true,
+			wantErr:          true,
+			errContains:      "private network",
+		},
+		{
+			name:             "192.168.1.1 blocked (private)",
+			host:             "192.168.1.1",
+			allowCustomHosts: true,
+			wantErr:          true,
+			errContains:      "private network",
+		},
+		{
+			name:             "fc00::1 blocked (IPv6 private)",
+			host:             "fc00::1",
+			allowCustomHosts: true,
+			wantErr:          true,
+			errContains:      "private network",
+		},
+
+		// Link-local (always blocked)
+		{
+			name:             "169.254.1.1 blocked (link-local)",
+			host:             "169.254.1.1",
+			allowCustomHosts: true,
+			wantErr:          true,
+			errContains:      "link-local",
+		},
+		{
+			name:             "fe80::1 blocked (IPv6 link-local)",
+			host:             "fe80::1",
+			allowCustomHosts: true,
+			wantErr:          true,
+			errContains:      "link-local",
+		},
+
+		// Public IPs (should work in permissive mode)
+		{
+			name:             "8.8.8.8 blocked (strict mode - is IP)",
+			host:             "8.8.8.8",
+			allowCustomHosts: false,
+			wantErr:          true,
+			errContains:      "IP addresses are not allowed",
+		},
+		{
+			name:             "8.8.8.8 allowed (permissive mode - public IP)",
+			host:             "8.8.8.8",
+			allowCustomHosts: true,
+			wantErr:          false,
+		},
+		{
+			name:             "1.1.1.1 allowed (permissive mode - public IP)",
+			host:             "1.1.1.1",
+			allowCustomHosts: true,
+			wantErr:          false,
+		},
+
+		// Unspecified addresses (always blocked)
+		{
+			name:             "0.0.0.0 blocked",
+			host:             "0.0.0.0",
+			allowCustomHosts: true,
+			wantErr:          true,
+			errContains:      "unspecified",
+		},
+		{
+			name:             ":: blocked (IPv6 unspecified)",
+			host:             "::",
+			allowCustomHosts: true,
+			wantErr:          true,
+			errContains:      "unspecified",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := HostValidationConfig{
+				AllowCustomHosts: tt.allowCustomHosts,
+			}
+			err := ValidateHost(tt.host, config)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ValidateHost() expected error, got nil")
+					return
+				}
+				if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
+					t.Errorf("ValidateHost() error = %q, should contain %q", err.Error(), tt.errContains)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("ValidateHost() unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestIsIPAddress tests IP address detection
+func TestIsIPAddress(t *testing.T) {
+	tests := []struct {
+		input  string
+		wantIP bool
+	}{
+		{"github.com", false},
+		{"192.168.1.1", true},
+		{"10.0.0.1", true},
+		{"127.0.0.1", true},
+		{"::1", true},
+		{"fe80::1", true},
+		{"2001:4860:4860::8888", true},
+		{"not-an-ip", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := isIPAddress(tt.input)
+			if result != tt.wantIP {
+				t.Errorf("isIPAddress(%q) = %v, want %v", tt.input, result, tt.wantIP)
+			}
+		})
+	}
+}
+
+// TestIsDangerousIP tests dangerous IP detection
+func TestIsDangerousIP(t *testing.T) {
+	tests := []struct {
+		ip             string
+		wantDangerous  bool
+		reasonContains string
+	}{
+		{"127.0.0.1", true, "loopback"},
+		{"localhost", false, ""}, // localhost resolves but ParseIP("localhost") returns nil
+		{"::1", true, "loopback"},
+		{"10.0.0.1", true, "private"},
+		{"172.16.0.1", true, "private"},
+		{"192.168.1.1", true, "private"},
+		{"169.254.1.1", true, "link-local"},
+		{"fe80::1", true, "link-local"},
+		{"0.0.0.0", true, "unspecified"},
+		{"::", true, "unspecified"},
+		{"8.8.8.8", false, ""},
+		{"1.1.1.1", false, ""},
+		{"2001:4860:4860::8888", false, ""}, // Google Public DNS IPv6
+		{"github.com", false, ""},           // Not an IP
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.ip, func(t *testing.T) {
+			isDangerous, reason := isDangerousIP(tt.ip)
+			if isDangerous != tt.wantDangerous {
+				t.Errorf("isDangerousIP(%q) = %v, want %v", tt.ip, isDangerous, tt.wantDangerous)
+			}
+			if tt.wantDangerous && !contains(reason, tt.reasonContains) {
+				t.Errorf("isDangerousIP(%q) reason = %q, should contain %q", tt.ip, reason, tt.reasonContains)
+			}
+		})
+	}
+}

@@ -1269,6 +1269,34 @@ services:
 - Validate URL format: `^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$`
 - Reject URLs with suspicious patterns
 
+#### Host Validation & SSRF Protection (✅ IMPLEMENTED)
+
+**Default Policy (Strict Mode)**:
+- Only allow known git hosts: `github.com`, `gitlab.com`, `bitbucket.org`
+- Block all IP addresses (both IPv4 and IPv6)
+- Block localhost/loopback addresses (`127.0.0.0/8`, `::1`, `localhost`)
+- Block private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`)
+- Block link-local addresses (`169.254.0.0/16`, `fe80::/10`)
+- Block unspecified addresses (`0.0.0.0`, `::`)
+
+**Escape Hatch (Permissive Mode)**:
+- Enable with `--allow-custom-hosts` CLI flag
+- Allows self-hosted repos (Gitea, GitLab, Gogs, etc.)
+- Still blocks all dangerous IPs (localhost, private networks, link-local)
+- Allows public IPs for legitimate self-hosted scenarios
+
+**Security Rationale**:
+- Prevents SSRF attacks against internal services (port 22, 80, 443, etc.)
+- Prevents network scanning of internal infrastructure
+- Most users only need GitHub/GitLab/Bitbucket
+- Power users can opt-in with explicit flag
+
+**Implementation**:
+- `internal/githttp/protocol.go`: `ValidateHost()` function
+- `internal/githttp/handler.go`: Validation before any network operations
+- `cmd/gitscan-server/main.go`: `--allow-custom-hosts` CLI flag
+- Comprehensive tests in `internal/githttp/protocol_test.go`
+
 ### Resource Limits
 
 - Maximum repo size: 500 MB (configurable)
