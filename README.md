@@ -69,7 +69,7 @@ git.vet implements the git smart HTTP protocol and uses the sideband channel to 
 
 1. You request a clone from `git.vet`
 2. git.vet fetches the repo (shallow clone for speed)
-3. Scans with [opengrep](https://github.com/opengrep/opengrep) (LGPL 2.1)
+3. Scans with [opengrep](https://github.com/opengrep/opengrep) - fast, flexible static analysis
 4. Streams results via git protocol sideband messages
 5. Intentionally fails the clone (or completes it in `/clone/` mode)
 
