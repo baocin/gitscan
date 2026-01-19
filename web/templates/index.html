@@ -595,12 +595,14 @@
             </p>
             <div class="report-preview">
                 <div style="padding: 24px;">
-                    <iframe
-                        src="/reports/github.com/WebGoat/WebGoat/latest"
-                        style="width: 100%; height: 700px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);"
-                        title="WebGoat Security Scan Report"
-                        loading="lazy">
-                    </iframe>
+                    <div style="height: 700px; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);">
+                        <iframe
+                            src="/reports/github.com/WebGoat/WebGoat/latest"
+                            style="width: 100%; height: 780px; margin-top: -80px; border: none;"
+                            title="WebGoat Security Scan Report"
+                            loading="lazy">
+                        </iframe>
+                    </div>
                     <p style="text-align: center; margin-top: 16px; color: var(--text-muted); font-size: 0.9rem;">
                         <a href="/reports/github.com/WebGoat/WebGoat/latest" target="_blank" style="color: var(--accent); text-decoration: none;">
                             Open full report in new tab →
