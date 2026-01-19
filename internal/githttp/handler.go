@@ -671,7 +671,9 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 
 	// Contact
 	report.WriteBoxMiddle(width)
-	report.WriteBoxLine(fmt.Sprintf("Questions? %s", sb.Color(Cyan, "gitvet@steele.red")), width)
+	report.WriteBoxLine(fmt.Sprintf("Questions? %s • %s",
+		sb.Color(Cyan, "gitvet@steele.red"),
+		sb.Color(Cyan, "buymeacoffee.com/gitvet")), width)
 	report.WriteBoxBottom(width)
 
 	sb.WriteEmptyLine()
@@ -959,7 +961,9 @@ func (h *Handler) writeFetchError(sb *SidebandWriter, report *ReportWriter, pars
 	}
 
 	report.WriteBoxMiddle(boxWidth)
-	report.WriteBoxLine(sb.Color(Cyan, "Questions? gitvet@steele.red"), boxWidth)
+	report.WriteBoxLine(fmt.Sprintf("Questions? %s • %s",
+		sb.Color(Cyan, "gitvet@steele.red"),
+		sb.Color(Cyan, "buymeacoffee.com/gitvet")), boxWidth)
 	report.WriteBoxBottom(boxWidth)
 	sb.WriteEmptyLine()
 }
