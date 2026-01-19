@@ -128,11 +128,11 @@ Environment="XDG_CACHE_HOME=/var/lib/gitvet/cache"
 Environment="XDG_CONFIG_HOME=/var/lib/gitvet"
 Environment="SEMGREP_SEND_METRICS=off"
 ExecStart=/opt/gitvet/gitvet-server \
-    -listen :80 \
-    -tls-listen :443 \
+    -listen 0.0.0.0:80 \
+    -tls-listen 0.0.0.0:443 \
     -tls-cert /etc/letsencrypt/live/git.vet/fullchain.pem \
     -tls-key /etc/letsencrypt/live/git.vet/privkey.pem \
-    -ssh-listen :22 \
+    -ssh-listen 0.0.0.0:22 \
     -enable-ssh=true \
     -db /var/lib/gitvet/data/gitvet.db \
     -cache-dir /var/lib/gitvet/cache \
