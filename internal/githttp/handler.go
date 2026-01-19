@@ -549,71 +549,43 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, parsed *ParsedPath, repo *cache.CachedRepo, scan *db.Scan, width int, cacheHit bool) {
 	sb.WriteEmptyLine()
 
-	// Header
-	report.WriteBoxTop(width)
-	report.WriteBoxLine(sb.Bold("GIT.VET SECURITY REPORT"), width)
-	report.WriteBoxLine(fmt.Sprintf("Repository: %s", parsed.FullPath), width)
-	report.WriteBoxLine(fmt.Sprintf("Commit: %s", truncate(scan.CommitSHA, 12)), width)
-	if repo.License != "" {
-		report.WriteBoxLine(fmt.Sprintf("License: %s", repo.License), width)
-	}
-	report.WriteBoxLine(fmt.Sprintf("Scanned: %d files in %.1fs", scan.FilesScanned, float64(scan.ScanDurationMS)/1000), width)
-	if cacheHit {
-		report.WriteBoxLine(sb.Color(Cyan, "(cached result)"), width)
-	}
-
-	// Summary line
-	report.WriteBoxMiddle(width)
-	summaryLine := fmt.Sprintf("%s %d Critical   %s %d High   %s %d Medium   %s %d Low",
-		sb.Color(Red, IconCritical), scan.CriticalCount,
-		sb.Color(Yellow, IconHigh), scan.HighCount,
-		sb.Color(Blue, IconMedium), scan.MediumCount,
-		IconLow, scan.LowCount,
-	)
-	report.WriteBoxLine(summaryLine, width)
-
-	// Show findings if any (from low to high priority so terminal scrolls to most important)
+	// Show findings first (if any) so they appear before the summary
 	totalFindings := scan.CriticalCount + scan.HighCount + scan.MediumCount + scan.LowCount
 	if totalFindings > 0 && scan.ResultsJSON != "" {
-		report.WriteBoxMiddle(width)
-		report.WriteBoxLine(sb.Bold("FINDINGS:"), width)
-		report.WriteBoxLine("", width)
-
 		// Parse findings from ResultsJSON
 		var findings []scanner.Finding
 		if err := json.Unmarshal([]byte(scan.ResultsJSON), &findings); err == nil {
 			// Sort by severity (Critical -> High -> Medium -> Low, worst first)
 			sortedFindings := SortFindingsBySeverity(findings)
 
-			// Show all findings with improved formatting
-			for i, f := range sortedFindings {
+			// Show findings without box (cleaner look)
+			for _, f := range sortedFindings {
 				severityIcon := getSeverityIcon(sb, f.Severity)
 				severityLabel := strings.ToUpper(f.Severity)
 				shortRule := shortenRuleID(f.RuleID)
 
-				// Format: ✗ CRITICAL: insecure-document-method
-				report.WriteBoxLine(fmt.Sprintf("%s %s: %s", severityIcon, severityLabel, shortRule), width)
+				// Format: ⚠ HIGH: rule-name
+				sb.WriteProgress(fmt.Sprintf("%s %s: %s", severityIcon, severityLabel, shortRule))
 
-				// Show shortened path with line number
-				pathWithLine := fmt.Sprintf("%s:%d", f.Path, f.StartLine)
-				shortPath := shortenPath(pathWithLine, 60)
-				report.WriteBoxLine(fmt.Sprintf("  %s", shortPath), width)
+				// Show path with line number (indented)
+				pathWithLine := fmt.Sprintf("  %s:%d", f.Path, f.StartLine)
+				sb.WriteProgress(shortenPath(pathWithLine, width-2))
 
-				// Show message (already truncated by WriteBoxLine if needed)
-				report.WriteBoxLine(fmt.Sprintf("  %s", f.Message), width)
-
-				if i < len(sortedFindings)-1 {
-					report.WriteBoxLine("", width)
+				// Show message (indented)
+				msg := fmt.Sprintf("  %s", f.Message)
+				if len(msg) > width-2 {
+					msg = msg[:width-5] + "..."
 				}
+				sb.WriteProgress(msg)
 			}
+			sb.WriteEmptyLine()
 		}
 	}
 
-	// Bottom section - organized for clarity
-	report.WriteBoxMiddle(width)
-	report.WriteBoxLine("", width) // Empty line for spacing
+	// Main summary box
+	report.WriteBoxTop(width)
 
-	// Security Score
+	// Security Score - prominent display
 	grade := scanner.ScoreGrade(scan.SecurityScore)
 	var scoreColor string
 	var scoreIcon string
@@ -633,31 +605,30 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	}
 	scoreLine := fmt.Sprintf("%s %s: %s",
 		sb.Color(scoreColor, scoreIcon),
-		sb.Color(scoreColor, sb.Bold("SECURITY SCORE")),
+		sb.Color(scoreColor, "SECURITY SCORE"),
 		sb.Color(scoreColor, sb.Bold(fmt.Sprintf("%d/100 (%s)", scan.SecurityScore, grade))))
 	report.WriteBoxLine(scoreLine, width)
 
-	// Severity counts
+	// Severity counts on same line
 	report.WriteBoxMiddle(width)
-	summaryLineBottom := fmt.Sprintf("%s %d Critical   %s %d High   %s %d Medium   %s %d Low",
+	summaryLine := fmt.Sprintf("%s %d Critical    %s %d High    %s %d Medium    %s %d Low",
 		sb.Color(Red, IconCritical), scan.CriticalCount,
 		sb.Color(Yellow, IconHigh), scan.HighCount,
 		sb.Color(Blue, IconMedium), scan.MediumCount,
 		IconLow, scan.LowCount,
 	)
-	report.WriteBoxLine(summaryLineBottom, width)
+	report.WriteBoxLine(summaryLine, width)
 
 	// Report URL
 	report.WriteBoxMiddle(width)
 	reportURL := fmt.Sprintf("https://git.vet/r/%s", truncate(scan.CommitSHA, 8))
-	report.WriteBoxLine(fmt.Sprintf("Full report: %s", reportURL), width)
+	report.WriteBoxLine(fmt.Sprintf("Full report: %s", sb.Color(Cyan, reportURL)), width)
 
 	// Clone command
-	report.WriteBoxMiddle(width)
 	cloneURL := fmt.Sprintf("https://%s/%s/%s", parsed.Host, parsed.Owner, parsed.Repo)
 	report.WriteBoxLine(fmt.Sprintf("To clone: git clone %s", cloneURL), width)
 
-	// Contact email
+	// Contact
 	report.WriteBoxMiddle(width)
 	report.WriteBoxLine(fmt.Sprintf("Questions? %s", sb.Color(Cyan, "gitvet@steele.red")), width)
 	report.WriteBoxBottom(width)
