@@ -66,8 +66,8 @@ done
 # Popular repositories to preload
 # Format: "owner/repo" (GitHub repos)
 REPOS=(
-    # OWASP Security Projects
-    "OWASP/WebGoat"
+    # OWASP Security Projects (prioritized for marketing)
+    "WebGoat/WebGoat"
     "OWASP/NodeGoat"
     "juice-shop/juice-shop"
     "OWASP/CheatSheetSeries"

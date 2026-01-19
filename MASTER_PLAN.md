@@ -104,38 +104,38 @@ Git's smart HTTP protocol includes a **sideband channel** for sending progress m
 ### Standard Flow (Report Only)
 
 ```
-$ git clone https://git.vet/github.com/facebook/react
-Cloning into 'react'...
+$ git clone https://git.vet/github.com/WebGoat/WebGoat
+Cloning into 'WebGoat'...
 remote:
 remote: ⠋ [git.vet] Fetching repository...
-remote: ⠙ [git.vet] Fetched. 142MB, 4,521 files
+remote: ⠙ [git.vet] Fetched. 89MB, 2,847 files
 remote: ⠹ [git.vet] Scanning with opengrep...
-remote: ⠸ [git.vet] Progress: 1,204 / 4,521 files (26%)
-remote: ⠼ [git.vet] Progress: 3,102 / 4,521 files (68%)
+remote: ⠸ [git.vet] Progress: 742 / 2,847 files (26%)
+remote: ⠼ [git.vet] Progress: 1,936 / 2,847 files (68%)
 remote: ✓ [git.vet] Scan complete!
 remote:
 remote: ╔══════════════════════════════════════════════════════════════════╗
 remote: ║  GIT.VET SECURITY REPORT                                         ║
-remote: ║  Repository: facebook/react                                      ║
-remote: ║  Commit: a1b2c3d4e5f6                                            ║
-remote: ║  Scanned: 4,521 files in 3.2s                                    ║
+remote: ║  Repository: WebGoat/WebGoat                                     ║
+remote: ║  Commit: d4238ab4                                                ║
+remote: ║  Scanned: 2,847 files in 4.1s                                    ║
 remote: ╠══════════════════════════════════════════════════════════════════╣
-remote: ║  ✗ 0 Critical   ⚠ 2 High   ◆ 14 Medium   ○ 23 Low               ║
+remote: ║  ✗ 41 Critical   ⚠ 141 High   ◆ 0 Medium   ○ 0 Low              ║
 remote: ╠══════════════════════════════════════════════════════════════════╣
 remote: ║                                                                  ║
-remote: ║  HIGH: Potential ReDoS vulnerability                             ║
-remote: ║  └─ packages/react-dom/src/shared/sanitizeURL.js:42              ║
+remote: ║  CRITICAL: SQL Injection vulnerability                           ║
+remote: ║  └─ src/main/java/org/owasp/webgoat/lessons/sqlinjection/       ║
 remote: ║                                                                  ║
-remote: ║  HIGH: Unsafe innerHTML assignment                               ║
-remote: ║  └─ fixtures/dom/src/components/Editor.js:156                    ║
+remote: ║  CRITICAL: Path Traversal vulnerability                          ║
+remote: ║  └─ src/main/java/org/owasp/webgoat/lessons/pathtraversal/       ║
 remote: ║                                                                  ║
 remote: ╠══════════════════════════════════════════════════════════════════╣
-remote: ║  Full report: https://git.vet/r/fb-react-a1b2c3               ║
+remote: ║  Full report: https://git.vet/r/d4238ab4                         ║
 remote: ║                                                                  ║
 remote: ║          [Scannable QR code displays here]                       ║
 remote: ║         Scan QR to view full web report                          ║
 remote: ╠══════════════════════════════════════════════════════════════════╣
-remote: ║  To clone: git clone https://github.com/facebook/react           ║
+remote: ║  To clone: git clone https://github.com/WebGoat/WebGoat          ║
 remote: ╚══════════════════════════════════════════════════════════════════╝
 remote:
 fatal: Could not read from remote repository.

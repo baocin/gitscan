@@ -38,24 +38,24 @@ The scan results appear directly in your terminal.
 ## Example
 
 ```
-$ git clone https://git.vet/github.com/facebook/react
-Cloning into 'react'...
+$ git clone https://git.vet/github.com/WebGoat/WebGoat
+Cloning into 'WebGoat'...
 remote:
 remote: [git.vet] Fetching from github.com (shallow clone)...
-remote: [git.vet] Fetched. 4521 files
+remote: [git.vet] Fetched. 2847 files
 remote: [git.vet] Scanning with opengrep...
 remote: [git.vet] Scan complete!
 remote:
 remote: +------------------------------------------------------------------+
 remote: |  GIT.VET SECURITY REPORT                                         |
-remote: |  Repository: github.com/facebook/react                           |
-remote: |  Commit: a1b2c3d4                                                |
-remote: |  Scanned: 4521 files in 3.2s                                     |
+remote: |  Repository: github.com/WebGoat/WebGoat                          |
+remote: |  Commit: d4238ab4                                                |
+remote: |  Scanned: 2847 files in 4.1s                                     |
 remote: +------------------------------------------------------------------+
-remote: |  X 0 Critical   ! 2 High   * 14 Medium   - 23 Low                |
+remote: |  X 41 Critical   ! 141 High   * 0 Medium   - 0 Low               |
 remote: +------------------------------------------------------------------+
-remote: |  Full report: https://git.vet/r/a1b2c3d4                         |
-remote: |  To clone: git clone https://github.com/facebook/react           |
+remote: |  Full report: https://git.vet/r/d4238ab4                         |
+remote: |  To clone: git clone https://github.com/WebGoat/WebGoat          |
 remote: +------------------------------------------------------------------+
 remote:
 fatal: Could not read from remote repository.
