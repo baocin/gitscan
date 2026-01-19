@@ -283,10 +283,14 @@
             </tbody>
         </table>
 
-        <h2>Private Repositories</h2>
-        <p>Scan private repos by including credentials in the URL. A 10-second consent delay is enforced:</p>
-        <pre><code>git clone https://username:token@git.vet/github.com/private/repo</code></pre>
-        <p>Your code is deleted immediately after scanning. Credentials are never logged.</p>
+        <h2>Limitations</h2>
+        <p>git.vet currently supports <strong>public repositories only</strong>. Private repository scanning is not available at this time.</p>
+        <p>For private repository security scanning, consider:</p>
+        <ul style="margin-left: 24px; margin-bottom: 24px;">
+            <li>Running <a href="https://github.com/opengrep/opengrep" style="color: var(--accent);">opengrep</a> locally on your machine</li>
+            <li>Using GitHub's built-in code scanning</li>
+            <li>Self-hosting git.vet (open source)</li>
+        </ul>
 
         <h2>Web Reports</h2>
         <p>Every scan generates a shareable web report:</p>
@@ -300,25 +304,15 @@ https://git.vet/reports/github.com/owner/repo
 https://git.vet/reports/github.com/owner/repo/latest</code></pre>
 
         <h2>SSH Access</h2>
-        <p>git.vet supports SSH protocol with both slash and GitHub-style colon separators:</p>
-        <pre><code># Slash format
+        <p>git.vet supports SSH protocol with multiple URL formats:</p>
+        <pre><code># Standard git@ format
+git clone git@git.vet:github.com/owner/repo
+
+# Slash format
 git clone ssh://git.vet/github.com/owner/repo
 
-# GitHub-style colon format (also supported)
-git clone ssh://git.vet/github.com:owner/repo
-
-# Standard git@ format
-git clone git@git.vet:github.com/owner/repo</code></pre>
-
-        <h3>Private Repositories via SSH</h3>
-        <p>For private repositories, git.vet supports SSH agent forwarding to use your existing GitHub/GitLab keys:</p>
-        <pre><code># Add your SSH key to the agent (if not already loaded)
-ssh-add ~/.ssh/id_ed25519
-
-# Clone private repo - git will automatically forward your agent
-git clone git@git.vet:github.com/owner/private-repo</code></pre>
-        <p>When you clone via SSH, git automatically forwards your SSH agent (if you have <code>ForwardAgent yes</code> in your SSH config or keys loaded in your agent). git.vet uses your forwarded credentials to authenticate to GitHub/GitLab on your behalf.</p>
-        <p><strong>Security note:</strong> Agent forwarding allows git.vet to use your SSH keys during the connection. Only forward your agent to servers you trust. git.vet never stores or logs your keys.</p>
+# GitHub-style colon format
+git clone ssh://git.vet/github.com:owner/repo</code></pre>
 
         <h2>How It Works</h2>
         <p>git.vet implements the git smart HTTP protocol:</p>
