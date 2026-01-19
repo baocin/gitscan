@@ -137,6 +137,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/gitvet
+ReadOnlyPaths=/etc/letsencrypt
 PrivateTmp=true
 
 [Install]
