@@ -245,18 +245,35 @@ func (s *Server) handleGitCommand(conn *ssh.ServerConn, channel ssh.Channel, com
 	ctx := context.Background()
 	startTime := time.Now()
 
-	// Read and parse client's git request (want/have lines) before replying
-	// This is required by git protocol - client sends wants, server responds
+	// Send initial ref advertisement (required by git protocol - server goes first)
+	log.Printf("[ssh] Sending ref advertisement...")
+	pkt := githttp.NewPktLineWriter(channel)
+	headOID := "0000000000000000000000000000000000000000"
+	if err := pkt.WriteString(fmt.Sprintf("%s HEAD\x00side-band side-band-64k\n", headOID)); err != nil {
+		return fmt.Errorf("failed to write HEAD ref: %w", err)
+	}
+	if err := pkt.WriteString(fmt.Sprintf("%s refs/heads/main\n", headOID)); err != nil {
+		return fmt.Errorf("failed to write refs: %w", err)
+	}
+	if err := pkt.WriteFlush(); err != nil {
+		return fmt.Errorf("failed to flush refs: %w", err)
+	}
+	log.Printf("[ssh] Ref advertisement sent")
+
+	// Read and parse client's git request (want/have lines)
+	log.Printf("[ssh] Reading client wants...")
 	_, err = githttp.ParseGitRequest(channel)
 	if err != nil {
 		return fmt.Errorf("failed to parse git request: %w", err)
 	}
+	log.Printf("[ssh] Client wants received")
 
-	// Send git protocol header (NAK before sideband messages)
-	pkt := githttp.NewPktLineWriter(channel)
+	// Send NAK (no common base)
+	log.Printf("[ssh] Sending NAK...")
 	if err := pkt.WriteString("NAK\n"); err != nil {
 		return fmt.Errorf("failed to write NAK: %w", err)
 	}
+	log.Printf("[ssh] NAK sent")
 
 	// Create sideband writer for streaming output through SSH
 	useColors := parsed.Mode != "plain"
