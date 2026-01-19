@@ -205,12 +205,27 @@ Environment="SEMGREP_SEND_METRICS=off"
 ExecStart=/opt/gitvet/gitvet-server -listen :80 -tls-listen :443 -tls-cert /etc/letsencrypt/live/git.vet/fullchain.pem -tls-key /etc/letsencrypt/live/git.vet/privkey.pem -ssh-listen :22 -enable-ssh=true -db /var/lib/gitvet/data/gitvet.db -cache-dir /var/lib/gitvet/cache -opengrep SCANNER_PATH_PLACEHOLDER
 Restart=always
 RestartSec=5
+
+# Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/gitvet
 ReadOnlyPaths=/etc/letsencrypt
 PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target
