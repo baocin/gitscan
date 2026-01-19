@@ -268,7 +268,7 @@ func (h *Handler) ServeReport(w http.ResponseWriter, r *http.Request) {
 			data.LowCount = scan.LowCount
 			data.InfoCount = scan.InfoCount
 			data.SecurityScore = scan.SecurityScore
-			data.SecurityGrade = scanner.ScoreGrade(scan.SecurityScore)
+			data.SecurityGrade = scanner.RiskGrade(scan.SecurityScore)
 			data.TotalFindings = scan.CriticalCount + scan.HighCount + scan.MediumCount + scan.LowCount
 
 			// Parse findings from results_json
@@ -356,7 +356,7 @@ func (h *Handler) ServeRepoReports(w http.ResponseWriter, r *http.Request) {
 					MediumCount:   scan.MediumCount,
 					LowCount:      scan.LowCount,
 					SecurityScore: scan.SecurityScore,
-					SecurityGrade: scanner.ScoreGrade(scan.SecurityScore),
+					SecurityGrade: scanner.RiskGrade(scan.SecurityScore),
 					TotalFindings: scan.CriticalCount + scan.HighCount + scan.MediumCount + scan.LowCount,
 				}
 			}

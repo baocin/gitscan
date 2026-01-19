@@ -574,9 +574,9 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 		h.metrics.RecordScanTime(scanDuration)
 	}
 
-	log.Printf("Scan completed for %s: %d findings (%d critical, %d high, %d medium, %d low) in %v",
+	log.Printf("Scan completed for %s: %d findings (%d info-leak, %d critical, %d high, %d medium, %d low) in %v",
 		parsed.FullPath, len(scanResult.Findings),
-		scanResult.CriticalCount, scanResult.HighCount,
+		scanResult.InfoLeakCount, scanResult.CriticalCount, scanResult.HighCount,
 		scanResult.MediumCount, scanResult.LowCount, scanDuration)
 	sb.WriteProgressf("%s [git.vet] Scan complete!", IconSuccess)
 
@@ -585,6 +585,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 		RepoID:           repo.ID,
 		CommitSHA:        repo.LastCommitSHA,
 		ResultsJSON:      scanResult.FindingsJSON,
+		InfoLeakCount:    scanResult.InfoLeakCount,
 		CriticalCount:    scanResult.CriticalCount,
 		HighCount:        scanResult.HighCount,
 		MediumCount:      scanResult.MediumCount,
@@ -635,7 +636,7 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	sb.WriteEmptyLine()
 
 	// Show findings first (if any) so they appear before the summary
-	totalFindings := scan.CriticalCount + scan.HighCount + scan.MediumCount + scan.LowCount
+	totalFindings := scan.InfoLeakCount + scan.CriticalCount + scan.HighCount + scan.MediumCount + scan.LowCount
 	if totalFindings > 0 && scan.ResultsJSON != "" {
 		// Parse findings from ResultsJSON
 		var findings []scanner.Finding
@@ -670,18 +671,18 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	// Main summary box
 	report.WriteBoxTop(width)
 
-	// Security Score - prominent display
-	grade := scanner.ScoreGrade(scan.SecurityScore)
+	// Run Risk Score - prominent display
+	grade := scanner.RiskGrade(scan.SecurityScore)
 	var scoreColor string
 	var scoreIcon string
 	switch {
-	case scan.SecurityScore >= 90:
+	case scan.SecurityScore == 0:
 		scoreColor = Green
 		scoreIcon = "✓"
-	case scan.SecurityScore >= 70:
+	case scan.SecurityScore <= 30:
 		scoreColor = Yellow
 		scoreIcon = "⚠"
-	case scan.SecurityScore >= 50:
+	case scan.SecurityScore <= 60:
 		scoreColor = Yellow
 		scoreIcon = "⚠"
 	default:
@@ -690,13 +691,14 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	}
 	scoreLine := fmt.Sprintf("%s %s: %s",
 		sb.Color(scoreColor, scoreIcon),
-		sb.Color(scoreColor, "SECURITY SCORE"),
+		sb.Color(scoreColor, "RUN RISK"),
 		sb.Color(scoreColor, sb.Bold(fmt.Sprintf("%d/100 (%s)", scan.SecurityScore, grade))))
 	report.WriteBoxLine(scoreLine, width)
 
 	// Severity counts on same line
 	report.WriteBoxMiddle(width)
-	summaryLine := fmt.Sprintf("%s %d Critical    %s %d High    %s %d Medium    %s %d Low",
+	summaryLine := fmt.Sprintf("%s %d Info Leak    %s %d Critical    %s %d High    %s %d Medium    %s %d Low",
+		sb.Color(Magenta, IconInfoLeak), scan.InfoLeakCount,
 		sb.Color(Red, IconCritical), scan.CriticalCount,
 		sb.Color(Yellow, IconHigh), scan.HighCount,
 		sb.Color(Blue, IconMedium), scan.MediumCount,
@@ -730,8 +732,10 @@ func (h *Handler) writeJSONReport(sb *SidebandWriter, parsed *ParsedPath, repo *
 		Repository      string `json:"repository"`
 		CommitSHA       string `json:"commit_sha"`
 		License         string `json:"license,omitempty"`
-		SecurityScore   int    `json:"security_score"`
+		RunRisk         int    `json:"run_risk"`
+		SecurityScore   int    `json:"security_score"` // Deprecated: use run_risk
 		Grade           string `json:"grade"`
+		InfoLeakCount   int    `json:"info_leak_count"`
 		CriticalCount   int    `json:"critical_count"`
 		HighCount       int    `json:"high_count"`
 		MediumCount     int    `json:"medium_count"`
@@ -759,8 +763,10 @@ func (h *Handler) writeJSONReport(sb *SidebandWriter, parsed *ParsedPath, repo *
 		Repository:     parsed.FullPath,
 		CommitSHA:      scan.CommitSHA,
 		License:        repo.License,
-		SecurityScore:  scan.SecurityScore,
-		Grade:          scanner.ScoreGrade(scan.SecurityScore),
+		RunRisk:        scan.SecurityScore,
+		SecurityScore:  scan.SecurityScore, // Deprecated but kept for backwards compatibility
+		Grade:          scanner.RiskGrade(scan.SecurityScore),
+		InfoLeakCount:  scan.InfoLeakCount,
 		CriticalCount:  scan.CriticalCount,
 		HighCount:      scan.HighCount,
 		MediumCount:    scan.MediumCount,
@@ -791,6 +797,8 @@ func (h *Handler) writeJSONReport(sb *SidebandWriter, parsed *ParsedPath, repo *
 // getSeverityIcon returns the colored icon for a severity level
 func getSeverityIcon(sb *SidebandWriter, severity string) string {
 	switch strings.ToLower(severity) {
+	case "info-leak":
+		return sb.Color(Magenta, IconInfoLeak)
 	case "critical", "error":
 		return sb.Color(Red, IconCritical)
 	case "high", "warning":
@@ -811,9 +819,9 @@ func SortFindingsBySeverity(findings []scanner.Finding) []scanner.Finding {
 	sorted := make([]scanner.Finding, len(findings))
 	copy(sorted, findings)
 
-	// Sort by severity priority (critical first, info last)
+	// Sort by severity priority (info-leak first, info last)
 	severityOrder := map[string]int{
-		"critical": 0, "error": 0, "high": 1, "warning": 1, "medium": 2, "low": 3, "info": 4,
+		"info-leak": -1, "critical": 0, "error": 0, "high": 1, "warning": 1, "medium": 2, "low": 3, "info": 4,
 	}
 
 	for i := 0; i < len(sorted)-1; i++ {

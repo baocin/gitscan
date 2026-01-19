@@ -117,6 +117,12 @@ func (db *DB) runMigrations() error {
 		return err
 	}
 
+	// Add info_leak_count column to scans table
+	_, err = db.conn.Exec(`ALTER TABLE scans ADD COLUMN info_leak_count INTEGER DEFAULT 0`)
+	if err != nil && !isColumnExistsError(err) {
+		return err
+	}
+
 	return nil
 }
 
@@ -203,12 +209,13 @@ type Scan struct {
 	CommitSHA        string
 	ResultsJSON      string
 	SummaryJSON      string
+	InfoLeakCount    int // Data exfiltration / credential theft findings
 	CriticalCount    int
 	HighCount        int
 	MediumCount      int
 	LowCount         int
 	InfoCount        int
-	SecurityScore    int // 0-100 weighted security score
+	SecurityScore    int // 0-100 run risk score (0=safe, 100=dangerous)
 	FilesScanned     int
 	ScanDurationMS   int64
 	OpenGrepVersion  string
@@ -314,8 +321,8 @@ func (db *DB) UpdateRepoLicense(id int64, license string) error {
 func (db *DB) GetScanByRepoAndCommit(repoID int64, commitSHA string) (*Scan, error) {
 	row := db.conn.QueryRow(`
 		SELECT id, repo_id, commit_sha, results_json, summary_json,
-		       critical_count, high_count, medium_count, low_count, info_count,
-		       COALESCE(security_score, 100), files_scanned, scan_duration_ms,
+		       COALESCE(info_leak_count, 0), critical_count, high_count, medium_count, low_count, info_count,
+		       COALESCE(security_score, 0), files_scanned, scan_duration_ms,
 		       opengrep_version, rules_version, created_at,
 		       COALESCE(scan_level, 'normal'), COALESCE(cached_file_count, 0), COALESCE(scanned_file_count, 0),
 		       COALESCE(is_partial, FALSE), partial_reason
@@ -328,7 +335,7 @@ func (db *DB) GetScanByRepoAndCommit(repoID int64, commitSHA string) (*Scan, err
 	var openGrepVer, rulesVer, partialReason sql.NullString
 
 	err := row.Scan(&s.ID, &s.RepoID, &s.CommitSHA, &s.ResultsJSON, &summaryJSON,
-		&s.CriticalCount, &s.HighCount, &s.MediumCount, &s.LowCount, &s.InfoCount,
+		&s.InfoLeakCount, &s.CriticalCount, &s.HighCount, &s.MediumCount, &s.LowCount, &s.InfoCount,
 		&s.SecurityScore, &filesScanned, &s.ScanDurationMS, &openGrepVer, &rulesVer, &s.CreatedAt,
 		&s.ScanLevel, &s.CachedFileCount, &s.ScannedFileCount,
 		&s.IsPartial, &partialReason)
@@ -352,13 +359,13 @@ func (db *DB) GetScanByRepoAndCommit(repoID int64, commitSHA string) (*Scan, err
 func (db *DB) CreateScan(scan *Scan) error {
 	result, err := db.conn.Exec(`
 		INSERT INTO scans (repo_id, commit_sha, results_json, summary_json,
-		                   critical_count, high_count, medium_count, low_count, info_count,
+		                   info_leak_count, critical_count, high_count, medium_count, low_count, info_count,
 		                   security_score, files_scanned, scan_duration_ms, opengrep_version, rules_version,
 		                   scan_level, cached_file_count, scanned_file_count,
 		                   is_partial, partial_reason)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, scan.RepoID, scan.CommitSHA, scan.ResultsJSON, scan.SummaryJSON,
-		scan.CriticalCount, scan.HighCount, scan.MediumCount, scan.LowCount, scan.InfoCount,
+		scan.InfoLeakCount, scan.CriticalCount, scan.HighCount, scan.MediumCount, scan.LowCount, scan.InfoCount,
 		scan.SecurityScore, scan.FilesScanned, scan.ScanDurationMS, scan.OpenGrepVersion, scan.RulesVersion,
 		scan.ScanLevel, scan.CachedFileCount, scan.ScannedFileCount,
 		scan.IsPartial, nullString(scan.PartialReason))
