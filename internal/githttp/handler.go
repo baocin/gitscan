@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/baocin/gitscan/internal/cache"
 	"github.com/baocin/gitscan/internal/db"
 	"github.com/baocin/gitscan/internal/metrics"
@@ -223,7 +225,7 @@ func (h *Handler) handleInfoRefs(ctx context.Context, w http.ResponseWriter, r *
 	cloneURL := fmt.Sprintf("https://%s.git", parsed.FullPath)
 
 	// Quick fetch to get commit SHA (uses cache if available)
-	repo, err := h.cache.FetchRepo(ctx, parsed.FullPath, cloneURL, nil)
+	repo, err := h.cache.FetchRepo(ctx, parsed.FullPath, cloneURL, nil, nil)
 
 	var headOID string
 	if err != nil || repo == nil {
@@ -293,8 +295,8 @@ func (h *Handler) handleUploadPack(ctx context.Context, w http.ResponseWriter, r
 		}
 	}
 
-	// Start the scan process
-	h.performScan(ctx, sb, r, parsed, clientIP, startTime, isPrivate, skipCache)
+	// Start the scan process (no SSH agent for HTTP requests)
+	h.performScan(ctx, sb, r, parsed, clientIP, startTime, isPrivate, skipCache, nil)
 
 	// Send empty packfile and flush to properly terminate git protocol
 	sb.WriteEmptyPackfile()
@@ -359,7 +361,7 @@ func checkClientDisconnected(ctx context.Context) bool {
 }
 
 // PerformScanSSH performs a scan for SSH git clone (without HTTP request)
-func (h *Handler) PerformScanSSH(ctx context.Context, sb *SidebandWriter, parsed *ParsedPath, clientIP string, userAgent string, startTime time.Time, isPrivate bool, skipCache bool) {
+func (h *Handler) PerformScanSSH(ctx context.Context, sb *SidebandWriter, parsed *ParsedPath, clientIP string, userAgent string, startTime time.Time, isPrivate bool, skipCache bool, agentChannel ssh.Channel) {
 	// Create a minimal fake HTTP request for logging purposes
 	r := &http.Request{
 		Method: "SSH",
@@ -367,11 +369,11 @@ func (h *Handler) PerformScanSSH(ctx context.Context, sb *SidebandWriter, parsed
 			"User-Agent": []string{userAgent},
 		},
 	}
-	h.performScan(ctx, sb, r, parsed, clientIP, startTime, isPrivate, skipCache)
+	h.performScan(ctx, sb, r, parsed, clientIP, startTime, isPrivate, skipCache, agentChannel)
 }
 
 // performScan fetches the repo, scans it, and writes results via sideband
-func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.Request, parsed *ParsedPath, clientIP string, startTime time.Time, isPrivate bool, skipCache bool) {
+func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.Request, parsed *ParsedPath, clientIP string, startTime time.Time, isPrivate bool, skipCache bool, agentChannel ssh.Channel) {
 	report := NewReportWriter(sb)
 	boxWidth := 80
 
@@ -417,7 +419,14 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 	sb.WriteProgressf("%s [git.vet] Fetching from %s...", SpinnerFrames[frame%len(SpinnerFrames)], parsed.Host)
 
 	// Use full path as cache key, and construct proper clone URL
-	cloneURL := parsed.GetCloneURL()
+	// If SSH agent is available, use SSH clone URL instead of HTTPS
+	var cloneURL string
+	if agentChannel != nil {
+		cloneURL = parsed.GetSSHCloneURL()
+		log.Printf("[githttp] Using SSH clone URL with agent: %s", cloneURL)
+	} else {
+		cloneURL = parsed.GetCloneURL()
+	}
 	cloneStart := time.Now()
 	repo, err := h.cache.FetchRepo(ctx, parsed.FullPath, cloneURL, func(progress string) {
 		// Check for disconnect during fetch
@@ -426,7 +435,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 		}
 		frame++
 		// Don't show individual progress messages - keep output clean
-	})
+	}, agentChannel)
 	cloneDuration := time.Since(cloneStart)
 
 	// Check if cancelled during fetch

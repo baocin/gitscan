@@ -7,12 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 
 	"github.com/baocin/gitscan/internal/db"
 	"github.com/baocin/gitscan/internal/license"
@@ -100,6 +104,50 @@ func runGitWithLogging(ctx context.Context, args []string, prefix string) (strin
 	output := logWriter.String()
 
 	return output, err
+}
+
+// setupSSHAgent creates a Unix socket for SSH agent forwarding
+// Returns socket path and cleanup function
+func setupSSHAgent(agentChannel ssh.Channel) (string, func(), error) {
+	if agentChannel == nil {
+		return "", nil, nil
+	}
+
+	// Create temp directory for socket
+	tmpDir, err := os.MkdirTemp("", "git-vet-ssh-")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create temp dir: %w", err)
+	}
+
+	socketPath := filepath.Join(tmpDir, "agent.sock")
+
+	// Create Unix socket listener
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		os.RemoveAll(tmpDir)
+		return "", nil, fmt.Errorf("failed to create socket: %w", err)
+	}
+
+	// Create cleanup function
+	cleanup := func() {
+		listener.Close()
+		os.RemoveAll(tmpDir)
+	}
+
+	// Start serving agent requests
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return // Listener closed
+			}
+			// Forward between local socket and SSH agent channel
+			go agent.ServeAgent(agent.NewClient(agentChannel), conn)
+		}
+	}()
+
+	log.Printf("[cache] SSH agent socket created at %s", socketPath)
+	return socketPath, cleanup, nil
 }
 
 // classifyCloneError analyzes git clone output and returns a classified error
@@ -264,8 +312,9 @@ func New(database *db.DB, cfg Config) (*RepoCache, error) {
 
 // FetchRepo fetches or updates a repository, returning cache info
 // repoPath is the unique identifier (e.g., "github.com/user/repo")
-// cloneURL is the full git clone URL (e.g., "https://github.com/user/repo.git")
-func (c *RepoCache) FetchRepo(ctx context.Context, repoPath, cloneURL string, progressFn ProgressFunc) (*CachedRepo, error) {
+// cloneURL is the full git clone URL (e.g., "https://github.com/user/repo.git" or "git@github.com:owner/repo.git")
+// agentChannel is optional SSH agent for private repos (nil for public/HTTPS)
+func (c *RepoCache) FetchRepo(ctx context.Context, repoPath, cloneURL string, progressFn ProgressFunc, agentChannel ssh.Channel) (*CachedRepo, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -288,7 +337,7 @@ func (c *RepoCache) FetchRepo(ctx context.Context, repoPath, cloneURL string, pr
 					if progressFn != nil {
 						progressFn("Cached directory missing, re-cloning...")
 					}
-					return c.updateRepo(ctx, dbRepo, progressFn)
+					return c.updateRepo(ctx, dbRepo, progressFn, agentChannel)
 				}
 				// Other stat errors (permissions, etc.) - log but try to use anyway
 				log.Printf("[cache] Warning: stat error for %s: %v", dbRepo.LocalPath, err)
@@ -317,18 +366,18 @@ func (c *RepoCache) FetchRepo(ctx context.Context, repoPath, cloneURL string, pr
 		if progressFn != nil {
 			progressFn("Updating cached repository...")
 		}
-		return c.updateRepo(ctx, dbRepo, progressFn)
+		return c.updateRepo(ctx, dbRepo, progressFn, agentChannel)
 	}
 
 	// Clone new repository
 	if progressFn != nil {
 		progressFn("Cloning repository...")
 	}
-	return c.cloneRepo(ctx, repoPath, repoURL, progressFn)
+	return c.cloneRepo(ctx, repoPath, repoURL, progressFn, agentChannel)
 }
 
 // cloneRepo clones a new repository
-func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, progressFn ProgressFunc) (*CachedRepo, error) {
+func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, progressFn ProgressFunc, agentChannel ssh.Channel) (*CachedRepo, error) {
 	// Create local path
 	localPath := filepath.Join(c.cacheDir, sanitizePath(repoPath))
 
@@ -362,6 +411,15 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 	log.Printf("[cache] Cloning %s (timeout: %v, max file size: %d bytes)", repoPath, c.cloneTimeout, c.maxFileSize)
 	cloneStart := time.Now()
 
+	// Set up SSH agent if available
+	socketPath, cleanup, err := setupSSHAgent(agentChannel)
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup SSH agent: %w", err)
+	}
+	if cleanup != nil {
+		defer cleanup()
+	}
+
 	// Build git clone command with partial clone filtering to skip large files
 	args := []string{"clone",
 		"--depth", "1",
@@ -376,8 +434,23 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 
 	args = append(args, repoURL, localPath)
 
-	// Execute git clone with real-time logging
-	output, err := runGitWithLogging(ctx, args, "git clone")
+	// Execute git clone with real-time logging and SSH agent if available
+	var output string
+	if socketPath != "" {
+		// Clone with SSH agent
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+socketPath)
+
+		logWriter := newGitLogWriter("git clone (SSH)")
+		cmd.Stdout = logWriter
+		cmd.Stderr = logWriter
+
+		err = cmd.Run()
+		output = logWriter.String()
+	} else {
+		// Regular HTTPS clone
+		output, err = runGitWithLogging(ctx, args, "git clone")
+	}
 	cloneDuration := time.Since(cloneStart)
 
 	if err != nil {
@@ -451,7 +524,7 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 }
 
 // updateRepo updates an existing cached repository
-func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn ProgressFunc) (*CachedRepo, error) {
+func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn ProgressFunc, agentChannel ssh.Channel) (*CachedRepo, error) {
 	// Check if local path exists
 	if _, err := os.Stat(dbRepo.LocalPath); os.IsNotExist(err) {
 		// Directory missing, re-clone to existing path and UPDATE database record
@@ -469,6 +542,15 @@ func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn 
 		cloneCtx, cancel := context.WithTimeout(ctx, c.cloneTimeout)
 		defer cancel()
 
+		// Set up SSH agent if available
+		socketPath, cleanup, err := setupSSHAgent(agentChannel)
+		if err != nil {
+			return nil, fmt.Errorf("failed to setup SSH agent: %w", err)
+		}
+		if cleanup != nil {
+			defer cleanup()
+		}
+
 		// Build git clone command with partial clone filtering
 		args := []string{"clone",
 			"--depth", "1",
@@ -483,8 +565,23 @@ func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn 
 
 		args = append(args, repoURL, dbRepo.LocalPath)
 
-		// Execute git clone with real-time logging
-		output, err := runGitWithLogging(cloneCtx, args, "git clone")
+		// Execute git clone with real-time logging and SSH agent if available
+		var output string
+		if socketPath != "" {
+			// Clone with SSH agent
+			cmd := exec.CommandContext(cloneCtx, "git", args...)
+			cmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+socketPath)
+
+			logWriter := newGitLogWriter("git clone (SSH)")
+			cmd.Stdout = logWriter
+			cmd.Stderr = logWriter
+
+			err = cmd.Run()
+			output = logWriter.String()
+		} else {
+			// Regular HTTPS clone
+			output, err = runGitWithLogging(cloneCtx, args, "git clone")
+		}
 		cloneDuration := time.Since(cloneStart)
 
 		if err != nil {

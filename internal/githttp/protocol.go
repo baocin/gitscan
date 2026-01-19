@@ -303,6 +303,11 @@ func (p *ParsedPath) GetCloneURL() string {
 	return fmt.Sprintf("https://%s/%s/%s.git", p.Host, p.Owner, p.Repo)
 }
 
+// GetSSHCloneURL returns the SSH git clone URL for the parsed path
+func (p *ParsedPath) GetSSHCloneURL() string {
+	return fmt.Sprintf("git@%s:%s/%s.git", p.Host, p.Owner, p.Repo)
+}
+
 // GetAPIURL returns the API URL for repo metadata (host-specific)
 func (p *ParsedPath) GetAPIURL() string {
 	switch p.Host {

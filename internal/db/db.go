@@ -704,6 +704,54 @@ func (db *DB) GetTotalRepoCount() (int, error) {
 	return count, err
 }
 
+// GetRecentFailedRequests retrieves recent failed clone/scan requests
+func (db *DB) GetRecentFailedRequests(limit int) ([]struct {
+	RepoURL     string
+	Error       string
+	RequestMode string
+	CreatedAt   time.Time
+}, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	rows, err := db.conn.Query(`
+		SELECT repo_url, error, request_mode, created_at
+		FROM requests
+		WHERE success = FALSE AND error IS NOT NULL AND error != ''
+		ORDER BY created_at DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []struct {
+		RepoURL     string
+		Error       string
+		RequestMode string
+		CreatedAt   time.Time
+	}
+
+	for rows.Next() {
+		var r struct {
+			RepoURL     string
+			Error       string
+			RequestMode string
+			CreatedAt   time.Time
+		}
+		var requestMode sql.NullString
+		if err := rows.Scan(&r.RepoURL, &r.Error, &requestMode, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		r.RequestMode = requestMode.String
+		results = append(results, r)
+	}
+
+	return results, rows.Err()
+}
+
 // LogSuspiciousRequest logs a suspicious request attempt
 func (db *DB) LogSuspiciousRequest(ip, path, userAgent string) error {
 	_, err := db.conn.Exec(`

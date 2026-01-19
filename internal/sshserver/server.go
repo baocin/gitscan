@@ -137,17 +137,45 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	log.Printf("[ssh] New SSH connection from %s (user: %s, key: %s)",
 		sshConn.RemoteAddr(), sshConn.User(), fingerprint)
 
-	// Discard global requests
-	go ssh.DiscardRequests(reqs)
+	// Handle global requests (for agent forwarding)
+	var agentChannel ssh.Channel
+	go func() {
+		for req := range reqs {
+			switch req.Type {
+			case "auth-agent-req@openssh.com":
+				// Client is requesting agent forwarding
+				log.Printf("[ssh] Agent forwarding requested from %s", sshConn.RemoteAddr())
+				if req.WantReply {
+					req.Reply(true, nil)
+				}
+			default:
+				if req.WantReply {
+					req.Reply(false, nil)
+				}
+			}
+		}
+	}()
 
 	// Handle channels
 	for newChannel := range chans {
-		go s.handleChannel(sshConn, newChannel, fingerprint)
+		channelType := newChannel.ChannelType()
+		if channelType == "auth-agent@openssh.com" {
+			// This is the agent channel
+			channel, _, err := newChannel.Accept()
+			if err != nil {
+				log.Printf("[ssh] Failed to accept agent channel: %v", err)
+				continue
+			}
+			agentChannel = channel
+			log.Printf("[ssh] Agent channel established from %s", sshConn.RemoteAddr())
+		} else {
+			go s.handleChannel(sshConn, newChannel, fingerprint, agentChannel)
+		}
 	}
 }
 
 // handleChannel handles a single SSH channel (session)
-func (s *Server) handleChannel(conn *ssh.ServerConn, newChannel ssh.NewChannel, fingerprint string) {
+func (s *Server) handleChannel(conn *ssh.ServerConn, newChannel ssh.NewChannel, fingerprint string, agentChannel ssh.Channel) {
 	// Only accept session channels
 	if newChannel.ChannelType() != "session" {
 		newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
@@ -175,7 +203,7 @@ func (s *Server) handleChannel(conn *ssh.ServerConn, newChannel ssh.NewChannel, 
 			}
 
 			// Handle git commands
-			if err := s.handleGitCommand(conn, channel, command, fingerprint); err != nil {
+			if err := s.handleGitCommand(conn, channel, command, fingerprint, agentChannel); err != nil {
 				log.Printf("[ssh] Failed to handle git command: %v", err)
 				fmt.Fprintf(channel.Stderr(), "Error: %v\n", err)
 				channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{Status: 1}))
@@ -198,7 +226,7 @@ func (s *Server) handleChannel(conn *ssh.ServerConn, newChannel ssh.NewChannel, 
 var gitCommandPattern = regexp.MustCompile(`^git-upload-pack\s+'?/?([^']+?)'?$`)
 
 // handleGitCommand processes git SSH commands
-func (s *Server) handleGitCommand(conn *ssh.ServerConn, channel ssh.Channel, command string, fingerprint string) error {
+func (s *Server) handleGitCommand(conn *ssh.ServerConn, channel ssh.Channel, command string, fingerprint string, agentChannel ssh.Channel) error {
 	// Parse git command
 	matches := gitCommandPattern.FindStringSubmatch(command)
 	if matches == nil {
@@ -290,6 +318,12 @@ func (s *Server) handleGitCommand(conn *ssh.ServerConn, channel ssh.Channel, com
 	useColors := parsed.Mode != "plain"
 	sb := githttp.NewSidebandWriter(channel, useColors)
 
+	// Check if we have SSH agent forwarding available
+	hasAgent := agentChannel != nil
+	if hasAgent {
+		log.Printf("[ssh] SSH agent available for %s", parsed.FullPath)
+	}
+
 	// Determine if this is a private repo (SSH always allows private repos)
 	// We'll treat all SSH requests as potentially private for now
 	isPrivate := false // TODO: Detect based on repo metadata after fetch
@@ -299,7 +333,7 @@ func (s *Server) handleGitCommand(conn *ssh.ServerConn, channel ssh.Channel, com
 
 	// Perform the actual scan using the githttp handler
 	// This will stream all output through the sideband writer
-	s.handler.PerformScanSSH(ctx, sb, parsed, clientIP, userAgent, startTime, isPrivate, false)
+	s.handler.PerformScanSSH(ctx, sb, parsed, clientIP, userAgent, startTime, isPrivate, false, agentChannel)
 
 	// Send empty packfile and flush to properly terminate git protocol
 	sb.WriteEmptyPackfile()

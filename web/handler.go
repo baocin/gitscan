@@ -126,6 +126,12 @@ type StatsData struct {
 		DurationMS int64
 		TotalCount int
 	}
+	FailedRequests []struct {
+		RepoURL     string
+		Error       string
+		RequestMode string
+		CreatedAt   time.Time
+	}
 	TotalRepos int
 }
 
@@ -162,6 +168,12 @@ func (h *Handler) ServeStats(w http.ResponseWriter, r *http.Request) {
 		totalRepos, err := h.db.GetTotalRepoCount()
 		if err == nil {
 			data.TotalRepos = totalRepos
+		}
+
+		// Failed requests
+		failedRequests, err := h.db.GetRecentFailedRequests(20)
+		if err == nil {
+			data.FailedRequests = failedRequests
 		}
 	}
 
