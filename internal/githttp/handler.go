@@ -70,6 +70,13 @@ func (h *Handler) GetMetrics() *metrics.Metrics {
 	return h.metrics
 }
 
+// Allowed HTTP methods for git protocol and web pages
+var allowedMethods = map[string]bool{
+	"GET":  true, // git info/refs, web pages
+	"POST": true, // git upload-pack
+	"HEAD": true, // git HEAD requests
+}
+
 // ServeHTTP implements http.Handler
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
@@ -77,6 +84,33 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Get client IP
 	clientIP := getClientIP(r)
+
+	// Validate HTTP method - block WebDAV and other suspicious methods
+	if !allowedMethods[r.Method] {
+		log.Printf("[SECURITY] Blocked suspicious method %s from %s %s", r.Method, clientIP, r.URL.Path)
+
+		// Log suspicious request to database
+		if h.db != nil {
+			h.db.LogSuspiciousRequest(clientIP, fmt.Sprintf("%s %s", r.Method, r.URL.Path), r.UserAgent())
+
+			// Check if this IP should be banned for repeated suspicious activity
+			count, err := h.db.CountRecentSuspiciousRequests(clientIP, 1*time.Hour)
+			if err == nil && count >= 3 {
+				// Auto-ban after 3 suspicious requests in 1 hour
+				h.db.BanIP(clientIP, fmt.Sprintf("Auto-banned: %d suspicious method requests in 1 hour", count), 24*time.Hour)
+				log.Printf("[SECURITY] Auto-banned IP %s for repeated suspicious activity (%d requests)", clientIP, count)
+			}
+		}
+
+		// Track metric
+		if h.metrics != nil {
+			h.metrics.IncrementBlockedRequests()
+		}
+
+		// Return minimal information to attacker
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
 	// Parse the request path (now includes host: github.com/owner/repo)
 	parsed, err := ParseRepoPathFull(r.URL.Path)

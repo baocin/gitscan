@@ -13,13 +13,14 @@ type Metrics struct {
 	mu sync.RWMutex
 
 	// Counters
-	TotalScans      atomic.Int64
-	ActiveScans     atomic.Int64
-	CacheHits       atomic.Int64
-	CacheMisses     atomic.Int64
-	CloneErrors     atomic.Int64
-	ScanErrors      atomic.Int64
-	PeakConcurrent  atomic.Int64
+	TotalScans       atomic.Int64
+	ActiveScans      atomic.Int64
+	CacheHits        atomic.Int64
+	CacheMisses      atomic.Int64
+	CloneErrors      atomic.Int64
+	ScanErrors       atomic.Int64
+	PeakConcurrent   atomic.Int64
+	BlockedRequests  atomic.Int64 // Suspicious method requests blocked
 
 	// Timing histograms (in milliseconds)
 	cloneTimes []int64
@@ -135,6 +136,7 @@ type Snapshot struct {
 	CacheHitRate    float64           `json:"cache_hit_rate"`
 	CloneErrors     int64             `json:"clone_errors"`
 	ScanErrors      int64             `json:"scan_errors"`
+	BlockedRequests int64             `json:"blocked_requests"`
 	CloneTimesMs    map[string]int64  `json:"clone_times_ms"`
 	ScanTimesMs     map[string]int64  `json:"scan_times_ms"`
 	TotalTimesMs    map[string]int64  `json:"total_times_ms"`
@@ -162,10 +164,16 @@ func (m *Metrics) GetSnapshot() Snapshot {
 		CacheHitRate:    hitRate,
 		CloneErrors:     m.CloneErrors.Load(),
 		ScanErrors:      m.ScanErrors.Load(),
+		BlockedRequests: m.BlockedRequests.Load(),
 		CloneTimesMs:    stats(m.cloneTimes),
 		ScanTimesMs:     stats(m.scanTimes),
 		TotalTimesMs:    stats(m.totalTimes),
 	}
+}
+
+// IncrementBlockedRequests increments the blocked requests counter.
+func (m *Metrics) IncrementBlockedRequests() {
+	m.BlockedRequests.Add(1)
 }
 
 // JSON returns metrics as JSON.
