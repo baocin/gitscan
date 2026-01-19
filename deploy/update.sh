@@ -240,6 +240,33 @@ log_info "Updated systemd service to use $BINARY_NAME with HTTP :80, HTTPS :443,
 systemctl daemon-reload
 rm -f "$SERVICE_FILE.bak"
 
+# Ensure gitvet user has certificate access
+log_info "Configuring certificate permissions..."
+# Add gitvet to ssl-cert group if it exists
+if getent group ssl-cert &>/dev/null; then
+    if ! groups gitvet | grep -q ssl-cert; then
+        usermod -a -G ssl-cert gitvet
+        log_info "Added gitvet to ssl-cert group"
+    else
+        log_info "gitvet already in ssl-cert group"
+    fi
+fi
+
+# Set ACLs on Let's Encrypt certificates (if they exist)
+if [ -d /etc/letsencrypt/live ]; then
+    if command -v setfacl &>/dev/null; then
+        setfacl -R -m u:gitvet:rX /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null || true
+        log_info "Set ACLs on Let's Encrypt certificates for gitvet user"
+    else
+        # Fallback: set group permissions
+        chgrp -R ssl-cert /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null || true
+        chmod -R g+rX /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null || true
+        log_info "Set group permissions on Let's Encrypt certificates"
+    fi
+else
+    log_warn "Let's Encrypt certificates not found at /etc/letsencrypt/live"
+fi
+
 # Clear cache and reset database if needed
 log_info "Resetting cache..."
 # Look for reset_cache.sh: installed location, temp directory, or script directory

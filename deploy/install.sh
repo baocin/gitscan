@@ -66,6 +66,14 @@ else
     fi
 fi
 
+# Add gitvet user to ssl-cert group for Let's Encrypt certificate access
+if getent group ssl-cert &>/dev/null; then
+    usermod -a -G ssl-cert gitvet
+    echo "Added gitvet to ssl-cert group"
+else
+    echo "ssl-cert group doesn't exist (will set ACLs directly on certificates)"
+fi
+
 # Create directories
 mkdir -p /opt/gitvet
 mkdir -p /var/lib/gitvet/cache
@@ -183,6 +191,23 @@ else
     echo "✗ WARNING: /home/gitvet has incorrect ownership"
 fi
 
+# Set up certificate permissions (if certificates exist)
+if [ -d /etc/letsencrypt/live ]; then
+    echo "Configuring Let's Encrypt certificate permissions..."
+    # Try using setfacl first (preferred method)
+    if command -v setfacl &>/dev/null; then
+        setfacl -R -m u:gitvet:rX /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null || true
+        echo "✓ Set ACLs on Let's Encrypt certificates for gitvet user"
+    else
+        # Fallback: add to ssl-cert group and set group permissions
+        chgrp -R ssl-cert /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null || true
+        chmod -R g+rX /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null || true
+        echo "✓ Set group permissions on Let's Encrypt certificates"
+    fi
+else
+    echo "⚠ Let's Encrypt certificates not found - will need to configure after obtaining certificates"
+fi
+
 # Enable and start service
 systemctl daemon-reload
 systemctl enable gitvet
@@ -213,12 +238,15 @@ echo "SSL/TLS certificates:"
 echo "  Get certificate: sudo certbot certonly --dns-cloudflare --dns-cloudflare-credentials ~/.secrets/cloudflare.ini -d git.vet"
 echo "  Renew:           sudo certbot renew"
 echo "  Location:        /etc/letsencrypt/live/git.vet/"
+echo "  After obtaining: sudo setfacl -R -m u:gitvet:rX /etc/letsencrypt/live /etc/letsencrypt/archive"
 echo ""
 echo "Next steps:"
 echo "1. Get Let's Encrypt certificate (DNS challenge):"
 echo "   sudo certbot certonly --dns-cloudflare --dns-cloudflare-credentials ~/.secrets/cloudflare.ini -d git.vet"
-echo "2. Restart service: sudo systemctl restart gitvet"
-echo "3. Test HTTP:  curl http://localhost:80/github.com/baocin/gitscan"
-echo "4. Test HTTPS: curl https://git.vet/github.com/baocin/gitscan"
-echo "5. Test SSH:   git clone ssh://git.vet/github.com/baocin/gitscan"
+echo "2. Set certificate permissions:"
+echo "   sudo setfacl -R -m u:gitvet:rX /etc/letsencrypt/live /etc/letsencrypt/archive"
+echo "3. Restart service: sudo systemctl restart gitvet"
+echo "4. Test HTTP:  curl http://localhost:80/github.com/baocin/gitscan"
+echo "5. Test HTTPS: curl https://git.vet/github.com/baocin/gitscan"
+echo "6. Test SSH:   git clone ssh://git.vet/github.com/baocin/gitscan"
 echo ""
