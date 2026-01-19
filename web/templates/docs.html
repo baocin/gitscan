@@ -300,8 +300,12 @@ https://git.vet/reports/github.com/owner/repo
 https://git.vet/reports/github.com/owner/repo/latest</code></pre>
 
         <h2>SSH Access</h2>
-        <p>git.vet also supports SSH protocol:</p>
-        <pre><code>git clone ssh://git.vet/github.com/owner/repo</code></pre>
+        <p>git.vet supports SSH protocol with both slash and GitHub-style colon separators:</p>
+        <pre><code># Slash format
+git clone ssh://git.vet/github.com/owner/repo
+
+# GitHub-style colon format (also supported)
+git clone ssh://git.vet/github.com:owner/repo</code></pre>
 
         <h2>How It Works</h2>
         <p>git.vet implements the git smart HTTP protocol:</p>
@@ -313,19 +317,10 @@ https://git.vet/reports/github.com/owner/repo/latest</code></pre>
             <li>Intentionally fails the clone (or completes in <code>/clone/</code> mode)</li>
         </ol>
 
-        <h2>Self-Hosting</h2>
-        <p>Run your own instance with Docker:</p>
-        <pre><code>docker run -p 8080:8080 ghcr.io/baocin/gitscan:latest</code></pre>
-        <p>See the <a href="https://github.com/baocin/gitscan">GitHub repository</a> for full installation instructions.</p>
-
         <h2>API Reference</h2>
         <h3>Metrics Endpoint</h3>
         <pre><code>GET https://git.vet/metrics</code></pre>
         <p>Returns JSON with server metrics (uptime, cache hits, scan times, etc.)</p>
-
-        <h3>Version Endpoint</h3>
-        <pre><code>GET https://git.vet/version</code></pre>
-        <p>Returns server version information</p>
     </main>
 
     <footer>

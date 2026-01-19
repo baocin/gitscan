@@ -209,6 +209,17 @@ func (s *Server) handleGitCommand(conn *ssh.ServerConn, channel ssh.Channel, com
 	log.Printf("[ssh] Git upload-pack request for: %s (user: %s, key: %s)",
 		repoPath, conn.User(), fingerprint)
 
+	// Normalize GitHub-style colon format to slashes
+	// Convert: github.com:owner/repo → github.com/owner/repo
+	if colonIdx := strings.Index(repoPath, ":"); colonIdx != -1 {
+		beforeColon := repoPath[:colonIdx]
+		// Only replace if there's no slash before the colon (ensures it's the host:owner separator)
+		if !strings.Contains(beforeColon, "/") {
+			repoPath = strings.Replace(repoPath, ":", "/", 1)
+			log.Printf("[ssh] Normalized SSH path from GitHub-style colon format: %s", repoPath)
+		}
+	}
+
 	// Parse the repository path using githttp's parser
 	parsed, err := githttp.ParseRepoPathFull("/" + repoPath)
 	if err != nil {

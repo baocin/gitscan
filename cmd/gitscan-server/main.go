@@ -313,14 +313,15 @@ func main() {
 func blockSuspiciousPaths(database *db.DB, next http.Handler) http.Handler {
 	// Configuration for auto-ban
 	const (
-		suspiciousRequestThreshold = 5                // Ban after 5 suspicious requests
-		suspiciousRequestWindow    = 5 * time.Minute  // Within 5 minutes
-		banDuration                = 24 * time.Hour   // Ban for 24 hours
+		suspiciousRequestThreshold = 3                // Ban after 3 suspicious requests (reduced from 5)
+		suspiciousRequestWindow    = 2 * time.Minute  // Within 2 minutes (reduced from 5)
+		banDuration                = 48 * time.Hour   // Ban for 48 hours (increased from 24)
 		tarpitDelay                = 30 * time.Second // Delay suspicious requests by 30s
 	)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
+		method := r.Method
 
 		// Extract client IP
 		clientIP := r.RemoteAddr
@@ -343,14 +344,27 @@ func blockSuspiciousPaths(database *db.DB, next http.Handler) http.Handler {
 			}
 		}
 
+		// Block CONNECT method (HTTP proxy tunneling attempts)
+		if method == "CONNECT" {
+			log.Printf("[BLOCKED] CONNECT method from %s to %s", clientIP, path)
+			if database != nil {
+				database.LogSuspiciousRequest(clientIP, fmt.Sprintf("CONNECT %s", path), r.UserAgent())
+				count, err := database.CountRecentSuspiciousRequests(clientIP, suspiciousRequestWindow)
+				if err == nil && count >= suspiciousRequestThreshold {
+					reason := fmt.Sprintf("Auto-banned: %d suspicious requests in %v", count, suspiciousRequestWindow)
+					database.BanIP(clientIP, reason, banDuration)
+					log.Printf("[SECURITY] AUTO-BANNED IP %s: %s", clientIP, reason)
+				}
+			}
+			time.Sleep(tarpitDelay)
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
 		// Common attack patterns to block
 		suspiciousPatterns := []string{
+			// Environment files
 			"/.env",
-			"/config.php",
-			"/config.js",
-			"/aws-config",
-			"/aws.config",
-			"/.git/",
 			"/admin/.env",
 			"/backend/.env",
 			"/api/.env",
@@ -358,22 +372,91 @@ func blockSuspiciousPaths(database *db.DB, next http.Handler) http.Handler {
 			"/.env.save",
 			"/.env.local",
 			"/.env.production",
+			"/aws-config",
+			"/aws.config",
+			"/.aws/",
+			"/credentials",
+
+			// Git/SSH access
+			"/.git/",
+			"/.ssh/",
+			"/id_rsa",
+
+			// PHP files (common webshells and config files)
+			"/config.php",
+			"/config.js",
+
+			// WordPress/CMS
 			"/wp-admin",
+			"/wp-config",
+			"/xmlrpc.php",
 			"/phpMyAdmin",
 			"/phpmyadmin",
 			"/mysql",
-			"/.aws/",
-			"/credentials",
-			"/.ssh/",
-			"/id_rsa",
+
+			// Next.js/React framework probing
+			"/_next/",
+			"/api/route",
+			"/app/api",
+			"/_next/server",
+
+			// Other framework paths
+			"/graphql",
+			"/actuator/",
+			"/.well-known/security.txt",
 			"/cdn-cgi/",
+
+			// Common webshell names
+			"/shell.php",
+			"/c99.php",
+			"/r57.php",
+			"/wso.php",
+		}
+
+		// Check for generic PHP file requests (except legitimate ones)
+		if strings.HasSuffix(path, ".php") && !isLegitimatePhpPath(path) {
+			log.Printf("[BLOCKED] PHP file probe: %s from %s", path, clientIP)
+			if database != nil {
+				database.LogSuspiciousRequest(clientIP, path, r.UserAgent())
+				count, err := database.CountRecentSuspiciousRequests(clientIP, suspiciousRequestWindow)
+				if err == nil && count >= suspiciousRequestThreshold {
+					reason := fmt.Sprintf("Auto-banned: %d suspicious requests (PHP probing) in %v", count, suspiciousRequestWindow)
+					database.BanIP(clientIP, reason, banDuration)
+					log.Printf("[SECURITY] AUTO-BANNED IP %s: %s", clientIP, reason)
+				}
+			}
+			time.Sleep(tarpitDelay)
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		// Check for suspicious POST requests to non-existent paths
+		if method == "POST" && (path == "/" || strings.HasPrefix(path, "/_next") || strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/app")) {
+			// Allow POST to root with service parameter (for git protocol)
+			if path == "/" && r.URL.Query().Get("service") != "" {
+				// Legitimate git request, allow it
+			} else {
+				log.Printf("[BLOCKED] Suspicious POST: %s from %s", path, clientIP)
+				if database != nil {
+					database.LogSuspiciousRequest(clientIP, fmt.Sprintf("POST %s", path), r.UserAgent())
+					count, err := database.CountRecentSuspiciousRequests(clientIP, suspiciousRequestWindow)
+					if err == nil && count >= suspiciousRequestThreshold {
+						reason := fmt.Sprintf("Auto-banned: %d suspicious requests (framework probing) in %v", count, suspiciousRequestWindow)
+						database.BanIP(clientIP, reason, banDuration)
+						log.Printf("[SECURITY] AUTO-BANNED IP %s: %s", clientIP, reason)
+					}
+				}
+				time.Sleep(tarpitDelay)
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 		}
 
 		// Check if path matches any suspicious pattern
 		for _, pattern := range suspiciousPatterns {
 			if strings.Contains(path, pattern) {
 				// Log the suspicious request
-				log.Printf("[SECURITY] Blocked suspicious request: %s %s from %s", r.Method, path, clientIP)
+				log.Printf("[BLOCKED] Suspicious path pattern '%s' in %s from %s", pattern, path, clientIP)
 
 				// Track suspicious request in database
 				if database != nil {
@@ -384,7 +467,7 @@ func blockSuspiciousPaths(database *db.DB, next http.Handler) http.Handler {
 					if err == nil && count >= suspiciousRequestThreshold {
 						reason := fmt.Sprintf("Auto-banned: %d suspicious requests in %v", count, suspiciousRequestWindow)
 						database.BanIP(clientIP, reason, banDuration)
-						log.Printf("[SECURITY] AUTO-BANNED IP %s: %s", clientIP, reason)
+						log.Printf("[SECURITY] AUTO-BANNED IP %s: %s (total suspicious: %d)", clientIP, reason, count)
 					}
 				}
 
@@ -400,6 +483,14 @@ func blockSuspiciousPaths(database *db.DB, next http.Handler) http.Handler {
 		// Path is clean, continue to next handler
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isLegitimatePhpPath checks if a PHP file request is legitimate
+// Currently git.vet has no legitimate PHP files, so all .php requests are suspicious
+func isLegitimatePhpPath(path string) bool {
+	// git.vet is a Go application with no PHP files
+	// All .php requests are scanning attempts
+	return false
 }
 
 // logRequest is a middleware that logs HTTP requests
