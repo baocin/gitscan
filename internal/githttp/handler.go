@@ -433,6 +433,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 			if h.metrics != nil {
 				h.metrics.CacheHits.Add(1)
 			}
+			log.Printf("Using cached scan results for %s (commit %s)", parsed.FullPath, repo.LastCommitSHA[:8])
 			sb.WriteProgressf("%s [git.vet] Using cached scan results", IconSuccess)
 
 			// Output format based on mode
