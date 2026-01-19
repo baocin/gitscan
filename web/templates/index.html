@@ -516,32 +516,32 @@
 
     <section class="hero">
         <div class="container">
-            <h1>Add <span>git.vet/</span> to any clone URL<br>for instant security scanning</h1>
-            <p>No installation. No signup. Just prefix any GitHub, GitLab, or Bitbucket URL with <strong style="color: var(--green)">git.vet/</strong> and clone.</p>
+            <h1><span>Scan before it lands.</span></h1>
+            <p>Post-install hooks don't wait for your code review. Security scanning that happens before <code>cd repo/</code></p>
 
             <div class="transform-demo">
                 <div class="transform-box">
-                    <div class="transform-label">Your normal clone command</div>
+                    <div class="transform-label"># YOLO mode</div>
                     <div class="transform-url">
-                        <span class="dim">git clone https://</span><span class="original">github.com/owner/repo</span>
+                        <span class="dim">git clone https://</span><span class="original">github.com/sketchy/cool-tool</span>
                     </div>
 
                     <div class="transform-arrow">↓</div>
 
-                    <div class="transform-label">Add git.vet/ prefix</div>
+                    <div class="transform-label"># Adult mode</div>
                     <div class="transform-url">
-                        <span class="dim">git clone https://</span><span class="highlight">git.vet/</span><span class="original">github.com/owner/repo</span>
+                        <span class="dim">git clone https://</span><span class="highlight">git.vet/</span><span class="original">github.com/sketchy/cool-tool</span>
                     </div>
 
-                    <div class="transform-hint">That's it. Just add <strong>git.vet/</strong> after https://</div>
+                    <div class="transform-hint">The attack surface opens at <strong>git clone</strong>, not npm start</div>
                 </div>
 
                 <div class="transform-box" style="margin-top: 24px;">
-                    <div class="transform-label">Or use SSH protocol</div>
+                    <div class="transform-label">SSH format also works</div>
                     <div class="transform-url">
                         <span class="dim">git clone </span><span class="highlight">git@git.vet:</span><span class="original">github.com/owner/repo</span>
                     </div>
-                    <div class="transform-hint">Standard SSH format also supported</div>
+                    <div class="transform-hint">500 stars ≠ safe to clone</div>
                 </div>
             </div>
 
@@ -559,7 +559,7 @@
 
     <section class="features">
         <div class="container">
-            <h2>Why git.vet?</h2>
+            <h2>Clone with confidence. Not blind trust.</h2>
             <div class="features-grid">
                 <div class="feature">
                     <div class="feature-icon">🚀</div>
@@ -577,14 +577,19 @@
                     <p>Fast, flexible, framework-agnostic static analysis with comprehensive security rules.</p>
                 </div>
                 <div class="feature">
-                    <div class="feature-icon">🔓</div>
-                    <h3>Public Repositories</h3>
-                    <p>Scan any public repository on GitHub, GitLab, or Bitbucket. Free and unlimited.</p>
+                    <div class="feature-icon">✈️</div>
+                    <h3>TSA for Git</h3>
+                    <p>500 stars ≠ safe to clone. Quarantine untrusted code before it touches your filesystem.</p>
                 </div>
                 <div class="feature">
                     <div class="feature-icon">📊</div>
                     <h3>Beautiful Web Reports</h3>
                     <p>Every scan generates a shareable web report with detailed findings, code snippets, severity levels, and remediation tips - all accessible in your browser.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🔓</div>
+                    <h3>Public Repositories</h3>
+                    <p>Scan any public repository on GitHub, GitLab, or Bitbucket. Free and unlimited.</p>
                 </div>
                 <div class="feature">
                     <div class="feature-icon">🌐</div>
@@ -618,10 +623,10 @@
 
     <section class="cta">
         <div class="container">
-            <h2>Try it now</h2>
-            <p>Scan any public repository in seconds. Just add <strong style="color: var(--green)">git.vet/</strong> to the URL.</p>
+            <h2>Your IDE indexed it. Your shell sourced it.<br>You never scanned it.</h2>
+            <p>That HN repo you're about to clone? Scan it first.</p>
             <div class="cta-command">
-                <span class="prompt">$</span> git clone https://<span class="highlight-green">git.vet/</span>github.com/WebGoat/WebGoat
+                <span class="prompt">$</span> git clone https://<span class="highlight-green">git.vet/</span>github.com/sketchy/cool-tool
             </div>
         </div>
     </section>

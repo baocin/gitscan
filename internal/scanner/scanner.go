@@ -91,6 +91,7 @@ type ProgressFunc func(Progress)
 // Result represents scan results
 type Result struct {
 	Findings         []Finding
+	InfoLeakCount    int       // Credential/secret leaks (highest priority)
 	CriticalCount    int
 	HighCount        int
 	MediumCount      int
@@ -108,43 +109,45 @@ type Result struct {
 	PartialReason    string    // Why partial: "timeout", "cancelled", etc.
 }
 
-// SecurityScoreWeights defines point deductions per severity level
-var SecurityScoreWeights = map[string]int{
-	"critical": 25, // -25 points per critical finding
-	"high":     15, // -15 points per high finding
-	"medium":   5,  // -5 points per medium finding
-	"low":      1,  // -1 point per low finding
-	"info":     0,  // info findings don't affect score
+// RunRiskWeights defines risk points added per severity level
+var RunRiskWeights = map[string]int{
+	"info-leak": 50, // +50 risk per info leak (immediate danger to cloner)
+	"critical":  20, // +20 risk per critical finding
+	"high":      10, // +10 risk per high finding
+	"medium":    3,  // +3 risk per medium finding
+	"low":       1,  // +1 risk per low finding
+	"info":      0,  // info findings don't affect risk
 }
 
-// CalculateSecurityScore computes a 0-100 security score based on findings
-// 100 = perfect (no issues), 0 = critical security concerns
-func CalculateSecurityScore(critical, high, medium, low int) int {
-	score := 100
-	score -= critical * SecurityScoreWeights["critical"]
-	score -= high * SecurityScoreWeights["high"]
-	score -= medium * SecurityScoreWeights["medium"]
-	score -= low * SecurityScoreWeights["low"]
+// CalculateRunRisk computes a 0-100 run risk score based on findings
+// 0 = safe to run, 100 = extremely dangerous to execute
+func CalculateRunRisk(infoLeak, critical, high, medium, low int) int {
+	risk := 0
+	risk += infoLeak * RunRiskWeights["info-leak"]
+	risk += critical * RunRiskWeights["critical"]
+	risk += high * RunRiskWeights["high"]
+	risk += medium * RunRiskWeights["medium"]
+	risk += low * RunRiskWeights["low"]
 
-	if score < 0 {
-		score = 0
+	if risk > 100 {
+		risk = 100
 	}
-	return score
+	return risk
 }
 
-// ScoreGrade returns a letter grade for the security score
-func ScoreGrade(score int) string {
+// RiskGrade returns a letter grade for the run risk score
+func RiskGrade(risk int) string {
 	switch {
-	case score >= 90:
-		return "A"
-	case score >= 80:
-		return "B"
-	case score >= 70:
-		return "C"
-	case score >= 60:
-		return "D"
+	case risk == 0:
+		return "A" // Safe
+	case risk <= 10:
+		return "B" // Low risk
+	case risk <= 30:
+		return "C" // Medium risk
+	case risk <= 60:
+		return "D" // High risk
 	default:
-		return "F"
+		return "F" // Dangerous - do not run
 	}
 }
 
@@ -554,7 +557,7 @@ func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime
 
 			finding := Finding{
 				RuleID:   r.RuleID,
-				Severity: normalizeSeverity(severity),
+				Severity: normalizeSeverity(severity, r.RuleID),
 				Message:  r.Message.Text,
 			}
 
@@ -573,6 +576,8 @@ func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime
 
 			// Count by severity
 			switch finding.Severity {
+			case "info-leak":
+				result.InfoLeakCount++
 			case "critical":
 				result.CriticalCount++
 			case "high":
@@ -595,8 +600,9 @@ func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime
 		result.FindingsJSON = string(findingsBytes)
 	}
 
-	// Calculate security score
-	result.SecurityScore = CalculateSecurityScore(
+	// Calculate run risk score
+	result.SecurityScore = CalculateRunRisk(
+		result.InfoLeakCount,
 		result.CriticalCount,
 		result.HighCount,
 		result.MediumCount,
@@ -606,8 +612,67 @@ func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime
 	return result, nil
 }
 
-// normalizeSeverity normalizes severity strings
-func normalizeSeverity(s string) string {
+// classifyAsInfoLeak checks if a rule ID indicates data exfiltration/info stealing
+// from the perspective of the person cloning and running the code
+func classifyAsInfoLeak(ruleID string) bool {
+	ruleIDLower := strings.ToLower(ruleID)
+
+	// Pattern matching for data exfiltration / info stealing from cloner
+	leakPatterns := []string{
+		// SSH/credentials theft
+		"ssh-key", "reads-ssh", "steal-ssh", "exfiltrate-ssh",
+		"reads-credentials", "steal-credentials", "credential-theft",
+		"steals-ssh",
+
+		// Environment/config theft
+		"reads-env", "environment-var", "steal-env", "exfiltrate-env",
+		"reads-config", "steal-config", "env-var-access",
+
+		// AWS/cloud credentials
+		"aws-credential", "reads-aws", "steal-aws", "exfiltrate-aws",
+		"cloud-credential", "gcp-credential", "azure-credential",
+		"reads-cloud",
+
+		// Browser data
+		"browser-cookie", "browser-credential", "steal-cookie",
+		"reads-browser", "chrome-password", "firefox-password",
+		"cookie-theft", "browser-data",
+
+		// System access
+		"shell-history", "bash-history", "clipboard-access",
+		"keylog", "keystroke", "input-capture", "reads-clipboard",
+		"history-file",
+
+		// Cryptocurrency
+		"crypto-wallet", "bitcoin-wallet", "ethereum-wallet",
+		"metamask", "wallet-theft", "cryptocurrency",
+
+		// Network exfiltration
+		"data-exfiltration", "exfiltrate-data", "suspicious-upload",
+		"unauthorized-network", "phone-home", "suspicious-request",
+		"data-theft", "steals-data",
+
+		// File system access to private data
+		"reads-private-key", "steal-file", "unauthorized-read",
+		"reads-home", "access-private", "file-theft",
+	}
+
+	for _, pattern := range leakPatterns {
+		if strings.Contains(ruleIDLower, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// normalizeSeverity normalizes severity strings and promotes info leaks
+func normalizeSeverity(s string, ruleID string) string {
+	// Check if this is an information leak - highest priority
+	if classifyAsInfoLeak(ruleID) {
+		return "info-leak"
+	}
+
 	s = strings.ToLower(s)
 	switch s {
 	case "error", "critical":

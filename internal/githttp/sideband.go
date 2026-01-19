@@ -247,6 +247,7 @@ var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 
 // Severity icons
 const (
+	IconInfoLeak = "🚨"
 	IconCritical = "✗"
 	IconHigh     = "⚠"
 	IconMedium   = "◆"
@@ -257,6 +258,7 @@ const (
 
 // Plain severity icons (ASCII fallback)
 const (
+	PlainIconInfoLeak = "[!LEAK!]"
 	PlainIconCritical = "[X]"
 	PlainIconHigh     = "[!]"
 	PlainIconMedium   = "[*]"
