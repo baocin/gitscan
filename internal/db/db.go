@@ -475,6 +475,96 @@ func (db *DB) GetScanByCommitPrefix(commitPrefix string) (*ScanWithRepo, error) 
 	return &s, nil
 }
 
+// GetScansByRepo retrieves all scans for a repository URL
+func (db *DB) GetScansByRepo(repoURL string, limit int) ([]ScanWithRepo, error) {
+	if limit <= 0 {
+		limit = 50 // Default limit
+	}
+
+	rows, err := db.conn.Query(`
+		SELECT s.id, s.repo_id, s.commit_sha, s.results_json, s.summary_json,
+		       s.critical_count, s.high_count, s.medium_count, s.low_count, s.info_count,
+		       COALESCE(s.security_score, 100), s.files_scanned, s.scan_duration_ms,
+		       s.opengrep_version, s.rules_version, s.created_at,
+		       r.url, r.license
+		FROM scans s
+		JOIN repos r ON s.repo_id = r.id
+		WHERE r.url = ?
+		ORDER BY s.created_at DESC
+		LIMIT ?
+	`, repoURL, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var scans []ScanWithRepo
+	for rows.Next() {
+		var s ScanWithRepo
+		var summaryJSON sql.NullString
+		var filesScanned sql.NullInt64
+		var openGrepVer, rulesVer, license sql.NullString
+
+		err := rows.Scan(&s.ID, &s.RepoID, &s.CommitSHA, &s.ResultsJSON, &summaryJSON,
+			&s.CriticalCount, &s.HighCount, &s.MediumCount, &s.LowCount, &s.InfoCount,
+			&s.SecurityScore, &filesScanned, &s.ScanDurationMS, &openGrepVer, &rulesVer, &s.CreatedAt,
+			&s.RepoURL, &license)
+		if err != nil {
+			return nil, err
+		}
+
+		s.SummaryJSON = summaryJSON.String
+		s.FilesScanned = int(filesScanned.Int64)
+		s.OpenGrepVersion = openGrepVer.String
+		s.RulesVersion = rulesVer.String
+		s.License = license.String
+
+		scans = append(scans, s)
+	}
+
+	return scans, rows.Err()
+}
+
+// GetLatestScanByRepo retrieves the most recent scan for a repository
+func (db *DB) GetLatestScanByRepo(repoURL string) (*ScanWithRepo, error) {
+	row := db.conn.QueryRow(`
+		SELECT s.id, s.repo_id, s.commit_sha, s.results_json, s.summary_json,
+		       s.critical_count, s.high_count, s.medium_count, s.low_count, s.info_count,
+		       COALESCE(s.security_score, 100), s.files_scanned, s.scan_duration_ms,
+		       s.opengrep_version, s.rules_version, s.created_at,
+		       r.url, r.license
+		FROM scans s
+		JOIN repos r ON s.repo_id = r.id
+		WHERE r.url = ?
+		ORDER BY s.created_at DESC
+		LIMIT 1
+	`, repoURL)
+
+	var s ScanWithRepo
+	var summaryJSON sql.NullString
+	var filesScanned sql.NullInt64
+	var openGrepVer, rulesVer, license sql.NullString
+
+	err := row.Scan(&s.ID, &s.RepoID, &s.CommitSHA, &s.ResultsJSON, &summaryJSON,
+		&s.CriticalCount, &s.HighCount, &s.MediumCount, &s.LowCount, &s.InfoCount,
+		&s.SecurityScore, &filesScanned, &s.ScanDurationMS, &openGrepVer, &rulesVer, &s.CreatedAt,
+		&s.RepoURL, &license)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	s.SummaryJSON = summaryJSON.String
+	s.FilesScanned = int(filesScanned.Int64)
+	s.OpenGrepVersion = openGrepVer.String
+	s.RulesVersion = rulesVer.String
+	s.License = license.String
+
+	return &s, nil
+}
+
 // LogSuspiciousRequest logs a suspicious request attempt
 func (db *DB) LogSuspiciousRequest(ip, path, userAgent string) error {
 	_, err := db.conn.Exec(`

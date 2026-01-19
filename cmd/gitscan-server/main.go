@@ -169,6 +169,7 @@ func main() {
 		http.Redirect(w, r, "/pricing", http.StatusMovedPermanently)
 	})
 	mux.HandleFunc("/r/", webHandler.ServeReport)
+	mux.HandleFunc("/reports/", webHandler.ServeRepoReports)
 
 	// Smart router: web pages vs git protocol
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
