@@ -1029,6 +1029,11 @@ func parseGitVersion(userAgent string) string {
 
 // serializeQueryParams converts URL query parameters to JSON string
 func serializeQueryParams(r *http.Request) string {
+	// Handle nil request or URL (e.g., SSH requests)
+	if r == nil || r.URL == nil {
+		return ""
+	}
+
 	if len(r.URL.Query()) == 0 {
 		return ""
 	}
