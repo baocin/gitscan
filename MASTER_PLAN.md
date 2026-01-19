@@ -16,6 +16,38 @@ git clone https://git.vet/github.com/user/repo
 
 Instead of cloning, they receive a security scan report displayed directly in their terminal.
 
+### Core Philosophy: Credential Theft Detection First
+
+**The primary question git.vet answers: "Will this tool steal my local credentials?"**
+
+Unlike traditional vulnerability scanners that prioritize CVEs and code quality issues, git.vet is built around a paranoid security model focused on **local credential theft detection**. When evaluating any repository, the hierarchy of concerns is:
+
+1. **🚨 CRITICAL - Credential Theft Behaviors** (highest priority)
+   - Reading `.aws/credentials`, `.aws/config`
+   - Accessing `~/.ssh/` directory (private keys, known_hosts)
+   - Exfiltrating `.env` files or environment variables
+   - Stealing browser cookies/sessions
+   - Reading password managers or keychains
+   - POST requests with sensitive local file contents
+
+2. **🔴 HIGH - Malicious Code Patterns**
+   - Encoded/obfuscated payloads (base64 decoded exec)
+   - Network exfiltration to hardcoded IPs/domains
+   - Process injection or persistence mechanisms
+   - Suspicious curl/wget piped to shell
+
+3. **🟠 MEDIUM - Traditional Vulnerabilities**
+   - CVEs in dependencies
+   - SQL injection, XSS, command injection
+   - Insecure cryptography
+
+4. **🟡 LOW - Code Quality Issues**
+   - Deprecated APIs
+   - Missing input validation
+   - Code smells
+
+This inverted priority model reflects the real-world threat: users clone repos to run locally, and the biggest risk is immediate credential exfiltration—not theoretical vulnerabilities that require specific conditions to exploit.
+
 ### Current Implementation Status
 
 | Feature | Status | Location |
@@ -127,6 +159,81 @@ fatal: Could not read from remote repository.
 | Bitbucket | `git.vet/bitbucket.org/owner/repo` |
 | Gitea | `git.vet/gitea.example.com/owner/repo` |
 | Self-hosted GitLab | `git.vet/gitlab.company.com/owner/repo` |
+
+### SSH Protocol Support
+
+git.vet supports both HTTPS and SSH access:
+
+```bash
+# HTTPS (default)
+git clone https://git.vet/github.com/user/repo
+
+# SSH
+git clone ssh://git.vet/github.com/user/repo
+```
+
+**Implementation Status:**
+- [ ] **TODO: Verify SSH connectivity is working** - User reported `ssh://git.vet/github.com/WebGoat/WebGoat` times out on port 22
+- [ ] SSH server implementation (`internal/gitssh/`)
+- [ ] SSH key fingerprint extraction for rate limiting
+- [ ] SSH sideband message support
+
+**SSH Server Architecture:**
+```go
+// internal/gitssh/server.go
+type SSHServer struct {
+    config   *ssh.ServerConfig
+    handler  *githttp.Handler  // Reuse HTTP handler logic
+}
+
+// SSH connections use the same scan pipeline as HTTPS
+func (s *SSHServer) HandleGitUploadPack(session ssh.Session) {
+    // Extract repo from command: git-upload-pack '/github.com/user/repo'
+    // Route through same handler as HTTP
+}
+```
+
+### Repository Deduplication (SSH vs HTTPS)
+
+The same repository accessed via different protocols should share cache and scan results:
+
+```
+ssh://git.vet/github.com/user/repo   ─┐
+                                      ├──▶ Canonical: github.com/user/repo
+https://git.vet/github.com/user/repo ─┘
+```
+
+**Normalization Rules:**
+1. Strip protocol prefix (`https://`, `ssh://`, `git://`)
+2. Strip `git.vet/` prefix
+3. Remove trailing `.git` suffix
+4. Lowercase the host portion
+5. Normalize path separators
+
+```go
+// internal/cache/normalize.go
+func NormalizeRepoURL(rawURL string) string {
+    // "ssh://git.vet/github.com/User/Repo.git" → "github.com/user/repo"
+    // "https://git.vet/GITHUB.COM/User/Repo"  → "github.com/user/repo"
+
+    url = strings.TrimPrefix(url, "ssh://")
+    url = strings.TrimPrefix(url, "https://")
+    url = strings.TrimPrefix(url, "git://")
+    url = strings.TrimPrefix(url, "git.vet/")
+    url = strings.TrimSuffix(url, ".git")
+
+    parts := strings.SplitN(url, "/", 2)
+    if len(parts) == 2 {
+        return strings.ToLower(parts[0]) + "/" + parts[1]
+    }
+    return url
+}
+```
+
+**Database Impact:**
+- `repos.url` stores the **canonical** normalized URL
+- `requests.repo_url` stores the **original** URL for debugging
+- Cache lookups use normalized URL for hits across protocols
 
 ### Branch and Tag Support
 
@@ -508,6 +615,77 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string) (*Results, error) {
 | secrets | API keys, passwords, tokens |
 | crypto | Weak algorithms, hardcoded keys |
 | injection | SQL, command, XSS, template injection |
+
+---
+
+## Package Manager Vulnerability Scanning
+
+### Detected Package Managers
+
+git.vet detects and scans dependencies from multiple package manager ecosystems:
+
+| Package Manager | Detection Files | Audit Command | Notes |
+|-----------------|-----------------|---------------|-------|
+| **npm** | `package.json`, `package-lock.json` | `npm audit --json` | Most common |
+| **yarn** | `yarn.lock` | `yarn audit --json` | v1 and v2+ support |
+| **pnpm** | `pnpm-lock.yaml` | `pnpm audit --json` | Strict lockfile |
+| **bun** | `bun.lockb` | `bun audit` (planned) | Binary lockfile |
+| **pip** | `requirements.txt`, `Pipfile.lock` | `pip-audit --json` | Python |
+| **cargo** | `Cargo.toml`, `Cargo.lock` | `cargo audit --json` | Rust |
+| **go** | `go.mod`, `go.sum` | `govulncheck -json` | Go modules |
+| **composer** | `composer.json`, `composer.lock` | `composer audit --format=json` | PHP |
+| **bundler** | `Gemfile`, `Gemfile.lock` | `bundle audit --format=json` | Ruby |
+| **maven** | `pom.xml` | OWASP dependency-check | Java |
+| **gradle** | `build.gradle`, `build.gradle.kts` | OWASP dependency-check | Java/Kotlin |
+
+### Scan Priority Order
+
+When multiple package managers are detected, scan in this order (most critical first):
+
+1. **Runtime dependencies** (package.json, requirements.txt, go.mod)
+2. **Lockfiles** (package-lock.json, yarn.lock, Cargo.lock)
+3. **Development dependencies** (marked separately in output)
+
+### Integration Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Package Vulnerability Pipeline                    │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  1. Detect package managers          2. Run native audit tools      │
+│     ├─ Scan for lockfiles               ├─ npm audit --json        │
+│     ├─ Check for manifest files         ├─ yarn audit --json       │
+│     └─ Identify ecosystems              └─ pip-audit --json        │
+│                                                                     │
+│                            ↓                                        │
+│  3. Normalize vulnerabilities        4. Merge with SAST findings   │
+│     ├─ Map to common severity           ├─ Deduplicate             │
+│     ├─ Extract CVE IDs                  ├─ Cross-reference         │
+│     └─ Get fix versions                 └─ Generate report         │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Example Output
+
+```
+remote: ╔══════════════════════════════════════════════════════════════════╗
+remote: ║  DEPENDENCY VULNERABILITIES (npm)                                ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
+remote: ║  HIGH: lodash@4.17.15 - Prototype Pollution (CVE-2020-8203)     ║
+remote: ║  └─ Fix: npm install lodash@4.17.21                             ║
+remote: ║                                                                  ║
+remote: ║  MEDIUM: axios@0.19.2 - SSRF vulnerability (CVE-2020-28168)     ║
+remote: ║  └─ Fix: npm install axios@0.21.1                               ║
+remote: ╚══════════════════════════════════════════════════════════════════╝
+```
+
+### Notes
+
+- Package vulnerabilities are classified as **MEDIUM** severity by default
+- **Credential theft patterns in dependencies are still CRITICAL** (e.g., malicious postinstall scripts)
+- Lockfile analysis is preferred over manifest analysis for accuracy
 
 ---
 
@@ -1281,6 +1459,30 @@ This would position git.vet as a comprehensive code intelligence platform, not j
 ---
 
 ## Future Enhancements
+
+### Phase 1.5 - Credential Theft Detection (PRIORITY)
+- [ ] **Implement credential theft detection rules** - Custom opengrep rules for:
+  - [ ] `.aws/credentials` and `.aws/config` file access patterns
+  - [ ] `~/.ssh/` directory traversal and key reading
+  - [ ] `.env` file exfiltration patterns
+  - [ ] Browser cookie/session stealing
+  - [ ] Keychain/password manager access
+  - [ ] Base64-encoded credential exfiltration
+- [ ] **Severity override system** - Credential theft patterns marked CRITICAL regardless of opengrep default
+- [ ] **Network exfiltration detection** - Identify outbound requests with sensitive data
+
+### Phase 1.6 - Package Vulnerability Scanning
+- [ ] **Detect package manager config files** (package.json, yarn.lock, pnpm-lock.yaml, bun.lockb)
+- [ ] **Run native audit commands** (npm audit, yarn audit, pnpm audit)
+- [ ] **Parse and normalize vulnerability output** to common format
+- [ ] **Scan postinstall scripts** for malicious behavior (CRITICAL priority)
+- [ ] **Support additional ecosystems**: pip-audit, cargo audit, govulncheck
+
+### Phase 1.7 - SSH Protocol Support
+- [ ] **TODO: Verify SSH connectivity is working** - Port 22 timeout reported
+- [ ] **Implement SSH server** (`internal/gitssh/`)
+- [ ] **SSH/HTTPS deduplication** - Canonical URL normalization
+- [ ] **SSH key fingerprint rate limiting**
 
 ### Phase 2
 - [ ] Private repository support (GitHub App OAuth)
