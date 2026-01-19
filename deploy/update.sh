@@ -164,45 +164,54 @@ fi
 # Update systemd service configuration
 log_info "Updating systemd service configuration..."
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
-if [ -f "$SERVICE_FILE" ]; then
-    # Detect scanner (opengrep or semgrep)
-    SCANNER_PATH="opengrep"
-    if ! command -v opengrep &> /dev/null; then
-        if command -v semgrep &> /dev/null; then
-            SCANNER_PATH="semgrep"
-        fi
+
+# Detect scanner (opengrep or semgrep)
+SCANNER_PATH="opengrep"
+if ! command -v opengrep &> /dev/null; then
+    if command -v semgrep &> /dev/null; then
+        SCANNER_PATH="semgrep"
     fi
-
-    # Update ExecStart line with new binary name and SSH support
-    if grep -q "^ExecStart=" "$SERVICE_FILE"; then
-        # Build the new ExecStart line
-        NEW_EXEC_START="ExecStart=$INSTALL_DIR/$BINARY_NAME -listen :6633 -ssh-listen :22 -enable-ssh=true -db /var/lib/gitvet/data/gitvet.db -cache-dir /var/lib/gitvet/cache -opengrep $SCANNER_PATH"
-
-        # Create backup
-        cp "$SERVICE_FILE" "$SERVICE_FILE.bak"
-
-        # Handle multi-line ExecStart: remove ExecStart and all continuation lines, then insert new one
-        # This matches from ^ExecStart= to the first line NOT ending with backslash
-        sed -i '/^ExecStart=/,/[^\\]$/{
-            /^ExecStart=/c\
-'"$NEW_EXEC_START"'
-            /^ExecStart=/!d
-        }' "$SERVICE_FILE"
-
-        if [ $? -eq 0 ]; then
-            log_info "Updated systemd service to use $BINARY_NAME with SSH support"
-            systemctl daemon-reload
-            rm -f "$SERVICE_FILE.bak"
-        else
-            log_warn "Failed to update systemd service file, restoring backup..."
-            mv "$SERVICE_FILE.bak" "$SERVICE_FILE"
-        fi
-    else
-        log_warn "ExecStart line not found in $SERVICE_FILE, skipping service update"
-    fi
-else
-    log_warn "Service file $SERVICE_FILE not found, skipping service update"
 fi
+
+# Create backup if service file exists
+if [ -f "$SERVICE_FILE" ]; then
+    cp "$SERVICE_FILE" "$SERVICE_FILE.bak"
+fi
+
+# Write complete service file (simpler than trying to sed multi-line ExecStart)
+cat > "$SERVICE_FILE" << 'SERVICEEOF'
+[Unit]
+Description=git.vet Security Scanner
+After=network.target
+
+[Service]
+Type=simple
+User=gitvet
+Group=gitvet
+WorkingDirectory=/opt/gitvet
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="XDG_CACHE_HOME=/var/lib/gitvet/cache"
+Environment="XDG_CONFIG_HOME=/var/lib/gitvet"
+Environment="SEMGREP_SEND_METRICS=off"
+ExecStart=/opt/gitvet/gitvet-server -listen :80 -tls-listen :443 -tls-cert /etc/letsencrypt/live/git.vet/fullchain.pem -tls-key /etc/letsencrypt/live/git.vet/privkey.pem -ssh-listen :22 -enable-ssh=true -db /var/lib/gitvet/data/gitvet.db -cache-dir /var/lib/gitvet/cache -opengrep SCANNER_PATH_PLACEHOLDER
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/gitvet
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+SERVICEEOF
+
+# Replace scanner path placeholder
+sed -i "s/SCANNER_PATH_PLACEHOLDER/$SCANNER_PATH/g" "$SERVICE_FILE"
+
+log_info "Updated systemd service to use $BINARY_NAME with HTTP :80, HTTPS :443, SSH :22"
+systemctl daemon-reload
+rm -f "$SERVICE_FILE.bak"
 
 # Clear cache and reset database if needed
 log_info "Resetting cache..."
@@ -305,7 +314,9 @@ log_info "=== Update Complete ==="
 systemctl status "$SERVICE_NAME" --no-pager
 echo ""
 echo "View logs: journalctl -u $SERVICE_NAME -f"
-echo "Test service: curl http://localhost:6633/github.com/baocin/gitscan"
+echo "Test HTTP: curl http://localhost:80/github.com/baocin/gitscan"
+echo "Test HTTPS: curl https://git.vet/github.com/baocin/gitscan"
+echo "Test SSH: git clone ssh://git.vet/github.com/baocin/gitscan"
 echo ""
 echo "Note: Database persists across updates (scan history preserved)"
 echo "To reset database: sudo rm /var/lib/gitvet/data/gitvet.db && sudo systemctl restart gitvet"

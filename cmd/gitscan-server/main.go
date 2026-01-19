@@ -34,8 +34,8 @@ var (
 func main() {
 	// Parse command line flags
 	var (
-		listenAddr        = flag.String("listen", ":6633", "HTTP listen address")
-		tlsAddr           = flag.String("tls-listen", ":8443", "HTTPS listen address")
+		listenAddr        = flag.String("listen", ":80", "HTTP listen address")
+		tlsAddr           = flag.String("tls-listen", ":443", "HTTPS listen address")
 		tlsCert           = flag.String("tls-cert", "", "TLS certificate file")
 		tlsKey            = flag.String("tls-key", "", "TLS private key file")
 		sshListenAddr     = flag.String("ssh-listen", ":22", "SSH listen address for git protocol")

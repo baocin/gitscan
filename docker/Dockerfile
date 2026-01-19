@@ -94,15 +94,15 @@ WORKDIR /data
 USER gitscan
 
 # Expose ports
-EXPOSE 6633 8443
+EXPOSE 80 443 22
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:6633/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1
 
 # Default command
 ENTRYPOINT ["/usr/local/bin/gitscan"]
-CMD ["--listen", ":6633", "--db", "/data/sqlite/gitscan.db", "--cache-dir", "/data/repos"]
+CMD ["--listen", ":80", "--tls-listen", ":443", "--ssh-listen", ":22", "--db", "/data/sqlite/gitscan.db", "--cache-dir", "/data/repos"]
 
 # ============================================================================
 # Stage 4: Test base image (for git version tests)

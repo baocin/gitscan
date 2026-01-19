@@ -109,7 +109,10 @@ Environment="XDG_CACHE_HOME=/var/lib/gitvet/cache"
 Environment="XDG_CONFIG_HOME=/var/lib/gitvet"
 Environment="SEMGREP_SEND_METRICS=off"
 ExecStart=/opt/gitvet/gitvet-server \
-    -listen :6633 \
+    -listen :80 \
+    -tls-listen :443 \
+    -tls-cert /etc/letsencrypt/live/git.vet/fullchain.pem \
+    -tls-key /etc/letsencrypt/live/git.vet/privkey.pem \
     -ssh-listen :22 \
     -enable-ssh=true \
     -db /var/lib/gitvet/data/gitvet.db \
@@ -166,7 +169,10 @@ echo ""
 echo "Service status:"
 systemctl status gitvet --no-pager
 echo ""
-echo "git.vet is running on http://localhost:6633"
+echo "git.vet is running on:"
+echo "  HTTP:  http://localhost:80"
+echo "  HTTPS: https://git.vet (port 443)"
+echo "  SSH:   ssh://git.vet (port 22)"
 echo ""
 echo "Management commands:"
 echo "  Update:       sudo /opt/gitvet/scripts/update.sh"
@@ -178,7 +184,16 @@ echo "  Location:     /var/lib/gitvet/data/gitvet.db"
 echo "  Persistence:  Database persists across restarts (scan history preserved)"
 echo "  Manual reset: sudo rm /var/lib/gitvet/data/gitvet.db && sudo systemctl restart gitvet"
 echo ""
+echo "SSL/TLS certificates:"
+echo "  Get certificate: sudo certbot certonly --dns-cloudflare --dns-cloudflare-credentials ~/.secrets/cloudflare.ini -d git.vet"
+echo "  Renew:           sudo certbot renew"
+echo "  Location:        /etc/letsencrypt/live/git.vet/"
+echo ""
 echo "Next steps:"
-echo "1. Configure your Cloudflare tunnel to point git.vet -> localhost:6633"
-echo "2. Test the service: curl http://localhost:6633/github.com/baocin/gitscan"
+echo "1. Get Let's Encrypt certificate (DNS challenge):"
+echo "   sudo certbot certonly --dns-cloudflare --dns-cloudflare-credentials ~/.secrets/cloudflare.ini -d git.vet"
+echo "2. Restart service: sudo systemctl restart gitvet"
+echo "3. Test HTTP:  curl http://localhost:80/github.com/baocin/gitscan"
+echo "4. Test HTTPS: curl https://git.vet/github.com/baocin/gitscan"
+echo "5. Test SSH:   git clone ssh://git.vet/github.com/baocin/gitscan"
 echo ""

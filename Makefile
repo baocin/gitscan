@@ -6,7 +6,7 @@ build:
 
 # Run locally
 run: build
-	./git-vet-server -listen :6633
+	./git-vet-server -listen :8080
 
 # Run tests
 test:
