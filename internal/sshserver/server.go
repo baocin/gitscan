@@ -228,6 +228,13 @@ func (s *Server) handleGitCommand(conn *ssh.ServerConn, channel ssh.Channel, com
 	ctx := context.Background()
 	startTime := time.Now()
 
+	// Read and parse client's git request (want/have lines) before replying
+	// This is required by git protocol - client sends wants, server responds
+	_, err = githttp.ParseGitRequest(channel)
+	if err != nil {
+		return fmt.Errorf("failed to parse git request: %w", err)
+	}
+
 	// Send git protocol header (NAK before sideband messages)
 	pkt := githttp.NewPktLineWriter(channel)
 	if err := pkt.WriteString("NAK\n"); err != nil {
