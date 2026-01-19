@@ -217,6 +217,13 @@
         .terminal-line {
             margin-bottom: 2px;
             white-space: pre;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .terminal-line * {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: inherit;
+            letter-spacing: 0;
         }
 
         .prompt {
@@ -231,10 +238,22 @@
             color: var(--text-muted);
         }
 
-        .highlight-green { color: var(--green); }
-        .highlight-yellow { color: var(--yellow); }
-        .highlight-red { color: var(--red); }
-        .highlight-blue { color: var(--accent); }
+        .highlight-green {
+            color: var(--green);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .highlight-yellow {
+            color: var(--yellow);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .highlight-red {
+            color: var(--red);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .highlight-blue {
+            color: var(--accent);
+            font-family: 'JetBrains Mono', monospace;
+        }
 
         /* Features */
         .features {
