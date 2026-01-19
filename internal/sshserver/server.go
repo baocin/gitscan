@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -20,6 +21,26 @@ import (
 	"github.com/baocin/gitscan/internal/db"
 	"github.com/baocin/gitscan/internal/githttp"
 )
+
+// connState holds per-connection state including the SSH agent channel
+type connState struct {
+	mu           sync.Mutex
+	agentChannel ssh.Channel
+}
+
+// getAgent safely retrieves the agent channel
+func (c *connState) getAgent() ssh.Channel {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.agentChannel
+}
+
+// setAgent safely sets the agent channel
+func (c *connState) setAgent(ch ssh.Channel) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.agentChannel = ch
+}
 
 // Server implements an SSH server for git operations
 type Server struct {
@@ -137,8 +158,10 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	log.Printf("[ssh] New SSH connection from %s (user: %s, key: %s)",
 		sshConn.RemoteAddr(), sshConn.User(), fingerprint)
 
+	// Create connection state to share agent channel across handlers
+	state := &connState{}
+
 	// Handle global requests (for agent forwarding)
-	var agentChannel ssh.Channel
 	go func() {
 		for req := range reqs {
 			switch req.Type {
@@ -166,16 +189,16 @@ func (s *Server) handleConnection(netConn net.Conn) {
 				log.Printf("[ssh] Failed to accept agent channel: %v", err)
 				continue
 			}
-			agentChannel = channel
+			state.setAgent(channel)
 			log.Printf("[ssh] Agent channel established from %s", sshConn.RemoteAddr())
 		} else {
-			go s.handleChannel(sshConn, newChannel, fingerprint, agentChannel)
+			go s.handleChannel(sshConn, newChannel, fingerprint, state)
 		}
 	}
 }
 
 // handleChannel handles a single SSH channel (session)
-func (s *Server) handleChannel(conn *ssh.ServerConn, newChannel ssh.NewChannel, fingerprint string, agentChannel ssh.Channel) {
+func (s *Server) handleChannel(conn *ssh.ServerConn, newChannel ssh.NewChannel, fingerprint string, state *connState) {
 	// Only accept session channels
 	if newChannel.ChannelType() != "session" {
 		newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
@@ -203,7 +226,7 @@ func (s *Server) handleChannel(conn *ssh.ServerConn, newChannel ssh.NewChannel, 
 			}
 
 			// Handle git commands
-			if err := s.handleGitCommand(conn, channel, command, fingerprint, agentChannel); err != nil {
+			if err := s.handleGitCommand(conn, channel, command, fingerprint, state); err != nil {
 				log.Printf("[ssh] Failed to handle git command: %v", err)
 				fmt.Fprintf(channel.Stderr(), "Error: %v\n", err)
 				channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{Status: 1}))
@@ -226,7 +249,7 @@ func (s *Server) handleChannel(conn *ssh.ServerConn, newChannel ssh.NewChannel, 
 var gitCommandPattern = regexp.MustCompile(`^git-upload-pack\s+'?/?([^']+?)'?$`)
 
 // handleGitCommand processes git SSH commands
-func (s *Server) handleGitCommand(conn *ssh.ServerConn, channel ssh.Channel, command string, fingerprint string, agentChannel ssh.Channel) error {
+func (s *Server) handleGitCommand(conn *ssh.ServerConn, channel ssh.Channel, command string, fingerprint string, state *connState) error {
 	// Parse git command
 	matches := gitCommandPattern.FindStringSubmatch(command)
 	if matches == nil {
@@ -318,7 +341,8 @@ func (s *Server) handleGitCommand(conn *ssh.ServerConn, channel ssh.Channel, com
 	useColors := parsed.Mode != "plain"
 	sb := githttp.NewSidebandWriter(channel, useColors)
 
-	// Check if we have SSH agent forwarding available
+	// Get SSH agent channel from connection state
+	agentChannel := state.getAgent()
 	hasAgent := agentChannel != nil
 	if hasAgent {
 		log.Printf("[ssh] SSH agent available for %s", parsed.FullPath)
