@@ -129,7 +129,7 @@ func main() {
 	gitHandler := githttp.NewHandler(database, repoCache, scan, limiter, preflightChecker, queueManager, metricsCollector, handlerCfg)
 
 	// Create web handler for marketing pages
-	webHandler, err := web.NewHandler(database)
+	webHandler, err := web.NewHandler(database, metricsCollector)
 	if err != nil {
 		log.Fatalf("Failed to initialize web handler: %v", err)
 	}
@@ -168,6 +168,11 @@ func main() {
 	mux.HandleFunc("/pricing/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/pricing", http.StatusMovedPermanently)
 	})
+	mux.HandleFunc("/docs", webHandler.ServeDocs)
+	mux.HandleFunc("/docs/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/docs", http.StatusMovedPermanently)
+	})
+	mux.HandleFunc("/stats", webHandler.ServeStats)
 	mux.HandleFunc("/r/", webHandler.ServeReport)
 	mux.HandleFunc("/reports/", webHandler.ServeRepoReports)
 

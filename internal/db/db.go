@@ -565,6 +565,145 @@ func (db *DB) GetLatestScanByRepo(repoURL string) (*ScanWithRepo, error) {
 	return &s, nil
 }
 
+// GetTopScannedRepos returns repositories with the most scans
+func (db *DB) GetTopScannedRepos(limit int) ([]struct {
+	URL       string
+	ScanCount int
+	LastScan  time.Time
+}, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	rows, err := db.conn.Query(`
+		SELECT r.url, COUNT(s.id) as scan_count, MAX(s.created_at) as last_scan
+		FROM repos r
+		JOIN scans s ON r.id = s.repo_id
+		GROUP BY r.url
+		ORDER BY scan_count DESC, last_scan DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []struct {
+		URL       string
+		ScanCount int
+		LastScan  time.Time
+	}
+
+	for rows.Next() {
+		var item struct {
+			URL       string
+			ScanCount int
+			LastScan  time.Time
+		}
+		if err := rows.Scan(&item.URL, &item.ScanCount, &item.LastScan); err != nil {
+			return nil, err
+		}
+		results = append(results, item)
+	}
+
+	return results, rows.Err()
+}
+
+// GetLargestRepo returns the repository with the most files
+func (db *DB) GetLargestRepo() (*struct {
+	URL       string
+	FileCount int
+	SizeBytes int64
+}, error) {
+	row := db.conn.QueryRow(`
+		SELECT url, file_count, size_bytes
+		FROM repos
+		WHERE file_count IS NOT NULL
+		ORDER BY file_count DESC
+		LIMIT 1
+	`)
+
+	var result struct {
+		URL       string
+		FileCount int
+		SizeBytes int64
+	}
+
+	var fileCount, sizeBytes sql.NullInt64
+	err := row.Scan(&result.URL, &fileCount, &sizeBytes)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	result.FileCount = int(fileCount.Int64)
+	result.SizeBytes = sizeBytes.Int64
+
+	return &result, nil
+}
+
+// GetRecentScans returns recent scans across all repositories
+func (db *DB) GetRecentScans(limit int) ([]struct {
+	RepoURL      string
+	CommitSHA    string
+	ScannedAt    time.Time
+	DurationMS   int64
+	TotalCount   int
+}, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	rows, err := db.conn.Query(`
+		SELECT r.url, s.commit_sha, s.created_at, s.scan_duration_ms,
+		       (s.critical_count + s.high_count + s.medium_count + s.low_count) as total_findings
+		FROM scans s
+		JOIN repos r ON s.repo_id = r.id
+		ORDER BY s.created_at DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []struct {
+		RepoURL      string
+		CommitSHA    string
+		ScannedAt    time.Time
+		DurationMS   int64
+		TotalCount   int
+	}
+
+	for rows.Next() {
+		var item struct {
+			RepoURL      string
+			CommitSHA    string
+			ScannedAt    time.Time
+			DurationMS   int64
+			TotalCount   int
+		}
+
+		var durationMS sql.NullInt64
+		if err := rows.Scan(&item.RepoURL, &item.CommitSHA, &item.ScannedAt, &durationMS, &item.TotalCount); err != nil {
+			return nil, err
+		}
+		item.DurationMS = durationMS.Int64
+		results = append(results, item)
+	}
+
+	return results, rows.Err()
+}
+
+// GetTotalRepoCount returns the total number of unique repositories scanned
+func (db *DB) GetTotalRepoCount() (int, error) {
+	var count int
+	err := db.conn.QueryRow(`SELECT COUNT(*) FROM repos`).Scan(&count)
+	return count, err
+}
+
 // LogSuspiciousRequest logs a suspicious request attempt
 func (db *DB) LogSuspiciousRequest(ip, path, userAgent string) error {
 	_, err := db.conn.Exec(`

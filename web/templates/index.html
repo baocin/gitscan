@@ -507,9 +507,9 @@
         <div class="container header-content">
             <a href="/" class="logo">git<span>.vet</span></a>
             <nav>
+                <a href="/docs">Docs</a>
                 <a href="/pricing">Pricing</a>
                 <a href="https://github.com/baocin/gitscan">GitHub</a>
-                <a href="https://github.com/baocin/gitscan/blob/main/MASTER_PLAN.md">Docs</a>
             </nav>
         </div>
     </header>
@@ -576,7 +576,7 @@
                 <div class="feature">
                     <div class="feature-icon">📊</div>
                     <h3>Beautiful Web Reports</h3>
-                    <p>Scan with QR code linking to a shareable web report. Full findings with code snippets, severity levels, and remediation tips - all in your browser.</p>
+                    <p>Every scan generates a shareable web report with detailed findings, code snippets, severity levels, and remediation tips - all accessible in your browser.</p>
                 </div>
                 <div class="feature">
                     <div class="feature-icon">🌐</div>
@@ -595,17 +595,17 @@
             </p>
             <div class="report-preview">
                 <div style="padding: 24px;">
-                    <div style="height: 700px; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);">
+                    <div style="height: 700px; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); cursor: pointer; position: relative;" onclick="window.open('/reports/github.com/WebGoat/WebGoat/latest', '_blank')" title="Click to open full report in new tab">
                         <iframe
                             src="/reports/github.com/WebGoat/WebGoat/latest"
-                            style="width: 100%; height: 780px; margin-top: -80px; border: none;"
+                            style="width: 100%; height: 780px; margin-top: -80px; border: none; pointer-events: none;"
                             title="WebGoat Security Scan Report"
                             loading="lazy">
                         </iframe>
                     </div>
                     <p style="text-align: center; margin-top: 16px; color: var(--text-muted); font-size: 0.9rem;">
                         <a href="/reports/github.com/WebGoat/WebGoat/latest" target="_blank" style="color: var(--accent); text-decoration: none;">
-                            Open full report in new tab →
+                            Click anywhere on the report to open in new tab →
                         </a>
                     </p>
                 </div>

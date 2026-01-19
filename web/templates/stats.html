@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stats - git.vet</title>
+    <meta name="robots" content="noindex">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta http-equiv="refresh" content="30">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red: #f85149;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        header {
+            padding: 24px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .logo span {
+            color: var(--accent);
+        }
+
+        .refresh-notice {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            margin: 40px 0;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+        }
+
+        .stat-card h2 {
+            font-size: 1.25rem;
+            margin-bottom: 16px;
+            color: var(--accent);
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .stat-item:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+        }
+
+        .stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+        }
+
+        .stat-value.good {
+            color: var(--green);
+        }
+
+        .stat-value.warning {
+            color: var(--yellow);
+        }
+
+        .stat-value.error {
+            color: var(--red);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--accent);
+            transition: width 0.3s;
+        }
+
+        .progress-fill.good {
+            background: var(--green);
+        }
+
+        .progress-fill.warning {
+            background: var(--yellow);
+        }
+
+        .progress-fill.error {
+            background: var(--red);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .repo-url {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--accent);
+        }
+
+        .time-ago {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .metric-box {
+            background: var(--bg-tertiary);
+            padding: 16px;
+            border-radius: 6px;
+        }
+
+        .metric-box .label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .metric-box .value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .section {
+            margin: 40px 0;
+        }
+
+        .section h2 {
+            font-size: 1.5rem;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid var(--border);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container header-content">
+            <a href="/" class="logo">git<span>.vet</span> <span style="font-size: 0.6em; color: var(--text-muted);">/ stats</span></a>
+            <span class="refresh-notice">Auto-refresh: 30s</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="section">
+            <h2>System Overview</h2>
+            <div class="metric-grid">
+                <div class="metric-box">
+                    <div class="label">Uptime</div>
+                    <div class="value" style="color: var(--green);">{{.Metrics.Uptime}}</div>
+                </div>
+                <div class="metric-box">
+                    <div class="label">Total Scans</div>
+                    <div class="value" style="color: var(--accent);">{{.Metrics.TotalScans}}</div>
+                </div>
+                <div class="metric-box">
+                    <div class="label">Active Scans</div>
+                    <div class="value" style="color: var(--yellow);">{{.Metrics.ActiveScans}}</div>
+                </div>
+                <div class="metric-box">
+                    <div class="label">Peak Concurrent</div>
+                    <div class="value">{{.Metrics.PeakConcurrent}}</div>
+                </div>
+                <div class="metric-box">
+                    <div class="label">Unique Repos</div>
+                    <div class="value" style="color: var(--accent);">{{.TotalRepos}}</div>
+                </div>
+                <div class="metric-box">
+                    <div class="label">Cache Hit Rate</div>
+                    <div class="value" style="color: {{if ge .Metrics.CacheHitRate 70.0}}var(--green){{else if ge .Metrics.CacheHitRate 40.0}}var(--yellow){{else}}var(--red){{end}};">{{printf "%.1f" .Metrics.CacheHitRate}}%</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h2>Cache Performance</h2>
+                <div class="stat-item">
+                    <span class="stat-label">Cache Hits</span>
+                    <span class="stat-value good">{{.Metrics.CacheHits}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Cache Misses</span>
+                    <span class="stat-value">{{.Metrics.CacheMisses}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Hit Rate</span>
+                    <span class="stat-value">{{printf "%.2f" .Metrics.CacheHitRate}}%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill {{if ge .Metrics.CacheHitRate 70.0}}good{{else if ge .Metrics.CacheHitRate 40.0}}warning{{else}}error{{end}}" style="width: {{printf "%.0f" .Metrics.CacheHitRate}}%"></div>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <h2>Error Statistics</h2>
+                <div class="stat-item">
+                    <span class="stat-label">Clone Errors</span>
+                    <span class="stat-value {{if gt .Metrics.CloneErrors 0}}error{{end}}">{{.Metrics.CloneErrors}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Scan Errors</span>
+                    <span class="stat-value {{if gt .Metrics.ScanErrors 0}}error{{end}}">{{.Metrics.ScanErrors}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Blocked Requests</span>
+                    <span class="stat-value warning">{{.Metrics.BlockedRequests}}</span>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <h2>Clone Times (ms)</h2>
+                <div class="stat-item">
+                    <span class="stat-label">Min</span>
+                    <span class="stat-value good">{{index .Metrics.CloneTimesMs "min"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Average</span>
+                    <span class="stat-value">{{index .Metrics.CloneTimesMs "avg"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">p50 (Median)</span>
+                    <span class="stat-value">{{index .Metrics.CloneTimesMs "p50"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">p95</span>
+                    <span class="stat-value">{{index .Metrics.CloneTimesMs "p95"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">p99</span>
+                    <span class="stat-value">{{index .Metrics.CloneTimesMs "p99"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Max</span>
+                    <span class="stat-value warning">{{index .Metrics.CloneTimesMs "max"}}</span>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <h2>Scan Times (ms)</h2>
+                <div class="stat-item">
+                    <span class="stat-label">Min</span>
+                    <span class="stat-value good">{{index .Metrics.ScanTimesMs "min"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Average</span>
+                    <span class="stat-value">{{index .Metrics.ScanTimesMs "avg"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">p50 (Median)</span>
+                    <span class="stat-value">{{index .Metrics.ScanTimesMs "p50"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">p95</span>
+                    <span class="stat-value">{{index .Metrics.ScanTimesMs "p95"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">p99</span>
+                    <span class="stat-value">{{index .Metrics.ScanTimesMs "p99"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Max</span>
+                    <span class="stat-value warning">{{index .Metrics.ScanTimesMs "max"}}</span>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <h2>Total Request Times (ms)</h2>
+                <div class="stat-item">
+                    <span class="stat-label">Min</span>
+                    <span class="stat-value good">{{index .Metrics.TotalTimesMs "min"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Average</span>
+                    <span class="stat-value">{{index .Metrics.TotalTimesMs "avg"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">p50 (Median)</span>
+                    <span class="stat-value">{{index .Metrics.TotalTimesMs "p50"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">p95</span>
+                    <span class="stat-value">{{index .Metrics.TotalTimesMs "p95"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">p99</span>
+                    <span class="stat-value">{{index .Metrics.TotalTimesMs "p99"}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Max</span>
+                    <span class="stat-value warning">{{index .Metrics.TotalTimesMs "max"}}</span>
+                </div>
+            </div>
+        </div>
+
+        {{if .TopRepos}}
+        <div class="section">
+            <h2>Top Scanned Repositories</h2>
+            <div class="stat-card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Repository</th>
+                            <th>Scan Count</th>
+                            <th>Last Scan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .TopRepos}}
+                        <tr>
+                            <td class="repo-url">{{.URL}}</td>
+                            <td><span class="stat-value" style="color: var(--accent);">{{.ScanCount}}</span></td>
+                            <td class="time-ago">{{.LastScan.Format "2006-01-02 15:04"}}</td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {{end}}
+
+        {{if .LargestRepo}}
+        <div class="section">
+            <h2>Largest Repository Scanned</h2>
+            <div class="stat-card">
+                <div class="stat-item">
+                    <span class="stat-label">Repository</span>
+                    <span class="repo-url">{{.LargestRepo.URL}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">File Count</span>
+                    <span class="stat-value" style="color: var(--accent);">{{.LargestRepo.FileCount}}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Size</span>
+                    <span class="stat-value">{{printf "%.2f MB" (divf .LargestRepo.SizeBytes 1048576)}}</span>
+                </div>
+            </div>
+        </div>
+        {{end}}
+
+        {{if .RecentScans}}
+        <div class="section">
+            <h2>Recent Scans</h2>
+            <div class="stat-card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Repository</th>
+                            <th>Commit</th>
+                            <th>Duration</th>
+                            <th>Findings</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .RecentScans}}
+                        <tr>
+                            <td class="repo-url">{{.RepoURL}}</td>
+                            <td><code style="font-size: 0.85rem;">{{slice .CommitSHA 0 8}}</code></td>
+                            <td>{{printf "%.2fs" (divf .DurationMS 1000)}}</td>
+                            <td><span class="stat-value {{if gt .TotalCount 0}}warning{{else}}good{{end}}">{{.TotalCount}}</span></td>
+                            <td class="time-ago">{{.ScannedAt.Format "2006-01-02 15:04"}}</td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {{end}}
+    </main>
+</body>
+</html>

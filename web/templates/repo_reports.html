@@ -93,8 +93,48 @@
 
         .not-found {
             text-align: center;
-            padding: 60px 0;
+            padding: 80px 24px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .not-found h2 {
+            font-size: 2rem;
+            color: var(--text);
+            margin-bottom: 16px;
+        }
+
+        .not-found p {
             color: var(--text-muted);
+            font-size: 1.05rem;
+            line-height: 1.6;
+        }
+
+        .not-found .scan-command {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 32px;
+            text-align: left;
+        }
+
+        .not-found .scan-command code {
+            display: block;
+            background: var(--bg-tertiary);
+            padding: 12px 16px;
+            border-radius: 6px;
+            color: var(--accent);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.95rem;
+            margin-top: 12px;
+            word-break: break-all;
+        }
+
+        .not-found .icon {
+            font-size: 4rem;
+            margin-bottom: 24px;
+            opacity: 0.5;
         }
 
         .scans-table {
@@ -266,6 +306,7 @@
         <div class="container header-content">
             <a href="/" class="logo">git<span>.vet</span></a>
             <nav>
+                <a href="/docs">Docs</a>
                 <a href="/pricing">Pricing</a>
                 <a href="https://github.com/baocin/gitscan">GitHub</a>
             </nav>
@@ -327,9 +368,19 @@
         </div>
         {{else}}
         <div class="not-found">
-            <h2>No scans found</h2>
-            <p style="margin-top: 16px;">This repository hasn't been scanned yet.</p>
-            <p style="margin-top: 8px;">Run: <code style="background: var(--bg-secondary); padding: 4px 8px; border-radius: 4px;">git clone https://git.vet/{{.RepoURL}}</code></p>
+            <div class="icon">🔍</div>
+            <h2>No Scans Found</h2>
+            <p>This repository hasn't been scanned yet. Run a security scan to generate your first report.</p>
+
+            <div class="scan-command">
+                <strong style="color: var(--text);">Scan this repository:</strong>
+                <code>git clone https://git.vet/{{.RepoURL}}</code>
+            </div>
+
+            <p style="margin-top: 24px; font-size: 0.95rem;">
+                Once the scan completes, the report will appear here.<br>
+                <a href="/docs" style="color: var(--accent); text-decoration: none;">Learn more about scan modes →</a>
+            </p>
         </div>
         {{end}}
     </main>

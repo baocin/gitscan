@@ -254,6 +254,72 @@
             font-size: 1.25rem;
         }
 
+        .severity-section {
+            margin-bottom: 32px;
+        }
+
+        .severity-section details {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .severity-section details[open] {
+            border-color: var(--accent);
+        }
+
+        .severity-section summary {
+            padding: 16px 20px;
+            cursor: pointer;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-weight: 600;
+            font-size: 1.1rem;
+            user-select: none;
+        }
+
+        .severity-section summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .severity-section summary:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .severity-section summary .severity-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .severity-section summary .severity-icon {
+            font-size: 1.25rem;
+        }
+
+        .severity-section summary .severity-count {
+            background: var(--bg-tertiary);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .severity-section summary .expand-icon {
+            color: var(--text-muted);
+            transition: transform 0.2s;
+        }
+
+        .severity-section details[open] summary .expand-icon {
+            transform: rotate(180deg);
+        }
+
+        .severity-section .findings-container {
+            padding: 0 20px 20px 20px;
+        }
+
         .finding-card {
             background: var(--bg-secondary);
             border: 1px solid var(--border);
@@ -434,6 +500,7 @@
         <div class="container header-content">
             <a href="/" class="logo">git<span>.vet</span></a>
             <nav>
+                <a href="/docs">Docs</a>
                 <a href="/pricing">Pricing</a>
                 <a href="https://github.com/baocin/gitscan">GitHub</a>
             </nav>
@@ -488,25 +555,143 @@
                     <h2>Findings ({{.TotalFindings}})</h2>
                 </div>
 
-                {{range .Findings}}
-                <div class="finding-card">
-                    <div class="finding-header">
-                        <div class="finding-title">
-                            <div class="finding-rule">{{.RuleID}}</div>
-                            <div class="finding-message">{{.Message}}</div>
+                <div class="severity-section">
+                    {{if .CriticalFindings}}
+                    <details {{if gt .CriticalCount 0}}open{{end}}>
+                        <summary>
+                            <div class="severity-title">
+                                <span class="severity-icon">🔴</span>
+                                <span style="color: var(--red);">Critical</span>
+                                <span class="severity-count" style="color: var(--red);">{{.CriticalCount}}</span>
+                            </div>
+                            <span class="expand-icon">▼</span>
+                        </summary>
+                        <div class="findings-container">
+                            {{range .CriticalFindings}}
+                            <div class="finding-card">
+                                <div class="finding-header">
+                                    <div class="finding-title">
+                                        <div class="finding-rule">{{.RuleID}}</div>
+                                        <div class="finding-message">{{.Message}}</div>
+                                    </div>
+                                    <span class="severity-badge {{.Severity | lower}}">{{.Severity}}</span>
+                                </div>
+                                <div class="finding-location">
+                                    <a href="#">{{.Path}}:{{.StartLine}}</a>
+                                </div>
+                                {{if .Snippet}}
+                                <div class="finding-snippet">
+                                    <pre><span class="line-number">{{.StartLine}}</span>{{.Snippet}}</pre>
+                                </div>
+                                {{end}}
+                            </div>
+                            {{end}}
                         </div>
-                        <span class="severity-badge {{.Severity | lower}}">{{.Severity}}</span>
-                    </div>
-                    <div class="finding-location">
-                        <a href="#">{{.Path}}:{{.StartLine}}</a>
-                    </div>
-                    {{if .Snippet}}
-                    <div class="finding-snippet">
-                        <pre><span class="line-number">{{.StartLine}}</span>{{.Snippet}}</pre>
-                    </div>
+                    </details>
+                    {{end}}
+
+                    {{if .HighFindings}}
+                    <details {{if gt .HighCount 0}}open{{end}}>
+                        <summary>
+                            <div class="severity-title">
+                                <span class="severity-icon">🟠</span>
+                                <span style="color: var(--orange);">High</span>
+                                <span class="severity-count" style="color: var(--orange);">{{.HighCount}}</span>
+                            </div>
+                            <span class="expand-icon">▼</span>
+                        </summary>
+                        <div class="findings-container">
+                            {{range .HighFindings}}
+                            <div class="finding-card">
+                                <div class="finding-header">
+                                    <div class="finding-title">
+                                        <div class="finding-rule">{{.RuleID}}</div>
+                                        <div class="finding-message">{{.Message}}</div>
+                                    </div>
+                                    <span class="severity-badge {{.Severity | lower}}">{{.Severity}}</span>
+                                </div>
+                                <div class="finding-location">
+                                    <a href="#">{{.Path}}:{{.StartLine}}</a>
+                                </div>
+                                {{if .Snippet}}
+                                <div class="finding-snippet">
+                                    <pre><span class="line-number">{{.StartLine}}</span>{{.Snippet}}</pre>
+                                </div>
+                                {{end}}
+                            </div>
+                            {{end}}
+                        </div>
+                    </details>
+                    {{end}}
+
+                    {{if .MediumFindings}}
+                    <details>
+                        <summary>
+                            <div class="severity-title">
+                                <span class="severity-icon">🟡</span>
+                                <span style="color: var(--yellow);">Medium</span>
+                                <span class="severity-count" style="color: var(--yellow);">{{.MediumCount}}</span>
+                            </div>
+                            <span class="expand-icon">▼</span>
+                        </summary>
+                        <div class="findings-container">
+                            {{range .MediumFindings}}
+                            <div class="finding-card">
+                                <div class="finding-header">
+                                    <div class="finding-title">
+                                        <div class="finding-rule">{{.RuleID}}</div>
+                                        <div class="finding-message">{{.Message}}</div>
+                                    </div>
+                                    <span class="severity-badge {{.Severity | lower}}">{{.Severity}}</span>
+                                </div>
+                                <div class="finding-location">
+                                    <a href="#">{{.Path}}:{{.StartLine}}</a>
+                                </div>
+                                {{if .Snippet}}
+                                <div class="finding-snippet">
+                                    <pre><span class="line-number">{{.StartLine}}</span>{{.Snippet}}</pre>
+                                </div>
+                                {{end}}
+                            </div>
+                            {{end}}
+                        </div>
+                    </details>
+                    {{end}}
+
+                    {{if .LowFindings}}
+                    <details>
+                        <summary>
+                            <div class="severity-title">
+                                <span class="severity-icon">⚪</span>
+                                <span style="color: var(--text-muted);">Low</span>
+                                <span class="severity-count" style="color: var(--text-muted);">{{.LowCount}}</span>
+                            </div>
+                            <span class="expand-icon">▼</span>
+                        </summary>
+                        <div class="findings-container">
+                            {{range .LowFindings}}
+                            <div class="finding-card">
+                                <div class="finding-header">
+                                    <div class="finding-title">
+                                        <div class="finding-rule">{{.RuleID}}</div>
+                                        <div class="finding-message">{{.Message}}</div>
+                                    </div>
+                                    <span class="severity-badge {{.Severity | lower}}">{{.Severity}}</span>
+                                </div>
+                                <div class="finding-location">
+                                    <a href="#">{{.Path}}:{{.StartLine}}</a>
+                                </div>
+                                {{if .Snippet}}
+                                <div class="finding-snippet">
+                                    <pre><span class="line-number">{{.StartLine}}</span>{{.Snippet}}</pre>
+                                </div>
+                                {{end}}
+                            </div>
+                            {{end}}
+                        </div>
+                    </details>
                     {{end}}
                 </div>
-                {{end}}
             </div>
             {{else}}
             <div class="no-findings">

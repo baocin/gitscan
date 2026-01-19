@@ -1373,11 +1373,58 @@ Detect common typosquatting patterns:
 
 ### Web Report Enhancements
 
-- ✅ **Marketing homepage highlights QR code feature** - Terminal demo shows QR code, "Beautiful Web Reports" feature card (`web/templates/index.html`)
+#### Implemented Features
+
+- ✅ **Collapsible Severity Sections** (`web/templates/report.html`, `web/handler.go`) - Findings are grouped by severity level (Critical, High, Medium, Low) in expandable `<details>` sections. Critical and High sections auto-expand if they contain findings; Medium and Low are collapsed by default. Each section displays count badge and severity icon.
+
+- ✅ **Interactive Report Embed** (`web/templates/index.html`) - Homepage iframe preview is clickable to open full report in new tab. Wrapper div includes `onclick` handler with `pointer-events: none` on iframe to prevent interference.
+
+- ✅ **Enhanced Error Pages** (`web/templates/repo_reports.html`) - "No scans found" page features centered layout with icon, helpful instructions, styled command box, and link to docs. Consistent visual design with report pages.
+
+- ✅ **Documentation Portal** (`web/templates/docs.html`, `web/handler.go`) - Comprehensive `/docs` page detailing:
+  - All scan modes (default, /clone, /plain, /json)
+  - Supported hosts (GitHub, GitLab, Bitbucket)
+  - Private repository authentication with consent delay
+  - SSH protocol support
+  - Web report URLs and patterns
+  - API reference (metrics, version endpoints)
+
+- ✅ **Stats Dashboard** (`web/templates/stats.html`, `web/handler.go`) - Unlisted `/stats` page (public but not linked in navigation) with:
+  - Auto-refresh every 30 seconds
+  - System overview (uptime, total scans, active scans, peak concurrent, cache hit rate)
+  - Performance metrics with percentiles (p50, p95, p99 for clone/scan/total times)
+  - Top scanned repositories table
+  - Largest repository scanned
+  - Recent scans across all repos
+  - Color-coded metrics (green=good, yellow=warning, red=error)
+
+- ✅ **Unified Navigation** - All templates (`index.html`, `pricing.html`, `docs.html`, `report.html`, `repo_reports.html`) include consistent header with "Docs → Pricing → GitHub" navigation
+
+- ✅ **Marketing Copy Updates** (`web/templates/index.html`) - Removed QR code references from feature descriptions. Focus on web reports without mentioning QR functionality.
+
+#### Planned Features
+
 - Copy-to-clipboard button for clone command
 - One-click clone command generation
 - Download report as PDF/JSON
-- Share report link
+- Share report link with custom expiry
+
+#### Technical Implementation Notes
+
+**Collapsible Sections Architecture:**
+- Backend (`web/handler.go`): `ReportData` struct includes severity-grouped slices (`CriticalFindings`, `HighFindings`, `MediumFindings`, `LowFindings`)
+- Findings parsed from `results_json` are sorted by severity then distributed into respective slices
+- Template uses HTML5 `<details>` + `<summary>` elements for native collapsibility
+- Auto-expand logic: `{{if gt .CriticalCount 0}}open{{end}}` conditionally adds `open` attribute
+- CSS transitions on `.expand-icon` (rotate 180° when expanded)
+
+**Interactive Iframe:**
+- Parent div onclick handler: `onclick="window.open('/reports/github.com/WebGoat/WebGoat/latest', '_blank')"`
+- Iframe styled with `pointer-events: none` to prevent click interception
+- Parent div includes `cursor: pointer` and tooltip title attribute
+
+**Template Function Extensions:**
+- Added `divf` template function for float division in stats dashboard (converts int64 to MB, milliseconds to seconds)
 
 ---
 

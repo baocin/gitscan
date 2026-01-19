@@ -11,6 +11,7 @@ import (
 
 	"github.com/baocin/gitscan/internal/db"
 	"github.com/baocin/gitscan/internal/githttp"
+	"github.com/baocin/gitscan/internal/metrics"
 	"github.com/baocin/gitscan/internal/scanner"
 )
 
@@ -25,12 +26,37 @@ type Handler struct {
 	templates    *template.Template
 	staticServer http.Handler
 	db           *db.DB
+	metrics      *metrics.Metrics
 }
 
 // NewHandler creates a new web handler
-func NewHandler(database *db.DB) (*Handler, error) {
+func NewHandler(database *db.DB, metricsCollector *metrics.Metrics) (*Handler, error) {
 	funcMap := template.FuncMap{
 		"lower": strings.ToLower,
+		"divf": func(a, b interface{}) float64 {
+			// Convert to float64 and divide
+			var aFloat, bFloat float64
+			switch v := a.(type) {
+			case int:
+				aFloat = float64(v)
+			case int64:
+				aFloat = float64(v)
+			case float64:
+				aFloat = v
+			}
+			switch v := b.(type) {
+			case int:
+				bFloat = float64(v)
+			case int64:
+				bFloat = float64(v)
+			case float64:
+				bFloat = v
+			}
+			if bFloat == 0 {
+				return 0
+			}
+			return aFloat / bFloat
+		},
 	}
 	tmpl, err := template.New("").Funcs(funcMap).ParseFS(templatesFS, "templates/*.html")
 	if err != nil {
@@ -47,6 +73,7 @@ func NewHandler(database *db.DB) (*Handler, error) {
 		templates:    tmpl,
 		staticServer: http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
 		db:           database,
+		metrics:      metricsCollector,
 	}, nil
 }
 
@@ -71,27 +98,104 @@ func (h *Handler) ServePricing(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ServeDocs serves the documentation page
+func (h *Handler) ServeDocs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.templates.ExecuteTemplate(w, "docs.html", nil); err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// StatsData holds data for the stats dashboard template
+type StatsData struct {
+	Metrics     metrics.Snapshot
+	TopRepos    []struct {
+		URL       string
+		ScanCount int
+		LastScan  time.Time
+	}
+	LargestRepo *struct {
+		URL       string
+		FileCount int
+		SizeBytes int64
+	}
+	RecentScans []struct {
+		RepoURL    string
+		CommitSHA  string
+		ScannedAt  time.Time
+		DurationMS int64
+		TotalCount int
+	}
+	TotalRepos int
+}
+
+// ServeStats serves the stats dashboard
+func (h *Handler) ServeStats(w http.ResponseWriter, r *http.Request) {
+	data := StatsData{}
+
+	// Get metrics snapshot
+	if h.metrics != nil {
+		data.Metrics = h.metrics.GetSnapshot()
+	}
+
+	// Get stats from database
+	if h.db != nil {
+		// Top scanned repos
+		topRepos, err := h.db.GetTopScannedRepos(10)
+		if err == nil {
+			data.TopRepos = topRepos
+		}
+
+		// Largest repo
+		largestRepo, err := h.db.GetLargestRepo()
+		if err == nil {
+			data.LargestRepo = largestRepo
+		}
+
+		// Recent scans
+		recentScans, err := h.db.GetRecentScans(20)
+		if err == nil {
+			data.RecentScans = recentScans
+		}
+
+		// Total repo count
+		totalRepos, err := h.db.GetTotalRepoCount()
+		if err == nil {
+			data.TotalRepos = totalRepos
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.templates.ExecuteTemplate(w, "stats.html", data); err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
 // ReportData holds data for the report template
 type ReportData struct {
-	ReportID      string
-	Found         bool
-	RepoURL       string
-	RepoName      string
-	CommitSHA     string
-	ShortCommit   string
-	ScannedAt     string
-	FilesScanned  int
-	ScanDuration  string
-	License       string
-	CriticalCount int
-	HighCount     int
-	MediumCount   int
-	LowCount      int
-	InfoCount     int
-	SecurityScore int    // 0-100 weighted security score
-	SecurityGrade string // A, B, C, D, F
-	TotalFindings int
-	Findings      []scanner.Finding
+	ReportID         string
+	Found            bool
+	RepoURL          string
+	RepoName         string
+	CommitSHA        string
+	ShortCommit      string
+	ScannedAt        string
+	FilesScanned     int
+	ScanDuration     string
+	License          string
+	CriticalCount    int
+	HighCount        int
+	MediumCount      int
+	LowCount         int
+	InfoCount        int
+	SecurityScore    int    // 0-100 weighted security score
+	SecurityGrade    string // A, B, C, D, F
+	TotalFindings    int
+	Findings         []scanner.Finding
+	CriticalFindings []scanner.Finding
+	HighFindings     []scanner.Finding
+	MediumFindings   []scanner.Finding
+	LowFindings      []scanner.Finding
 }
 
 // RepoReportsData holds data for the repository reports list template
@@ -161,6 +265,20 @@ func (h *Handler) ServeReport(w http.ResponseWriter, r *http.Request) {
 				if err := json.Unmarshal([]byte(scan.ResultsJSON), &findings); err == nil {
 					// Sort findings by severity (Critical -> High -> Medium -> Low, worst first)
 					data.Findings = githttp.SortFindingsBySeverity(findings)
+
+					// Group findings by severity for collapsible sections
+					for _, finding := range data.Findings {
+						switch strings.ToUpper(finding.Severity) {
+						case "CRITICAL":
+							data.CriticalFindings = append(data.CriticalFindings, finding)
+						case "HIGH":
+							data.HighFindings = append(data.HighFindings, finding)
+						case "MEDIUM":
+							data.MediumFindings = append(data.MediumFindings, finding)
+						case "LOW":
+							data.LowFindings = append(data.LowFindings, finding)
+						}
+					}
 				}
 			}
 		}

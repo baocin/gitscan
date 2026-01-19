@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation - git.vet</title>
+    <meta name="description" content="Complete documentation for git.vet - scan modes, usage examples, and API reference">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red: #f85149;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        header {
+            padding: 24px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .logo span {
+            color: var(--accent);
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-left: 32px;
+            font-size: 0.95rem;
+        }
+
+        nav a:hover {
+            color: var(--text);
+        }
+
+        .docs-content {
+            padding: 60px 0;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 16px;
+        }
+
+        h2 {
+            font-size: 1.75rem;
+            margin-top: 48px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h3 {
+            font-size: 1.25rem;
+            margin-top: 32px;
+            margin-bottom: 12px;
+            color: var(--accent);
+        }
+
+        p {
+            margin-bottom: 16px;
+            color: var(--text-muted);
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-secondary);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+
+        pre {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            overflow-x: auto;
+            margin-bottom: 24px;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 24px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .badge.default {
+            background: rgba(63, 185, 80, 0.15);
+            color: var(--green);
+        }
+
+        .badge.mode {
+            background: rgba(88, 166, 255, 0.15);
+            color: var(--accent);
+        }
+
+        footer {
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container header-content">
+            <a href="/" class="logo">git<span>.vet</span></a>
+            <nav>
+                <a href="/docs">Docs</a>
+                <a href="/pricing">Pricing</a>
+                <a href="https://github.com/baocin/gitscan">GitHub</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container docs-content">
+        <h1>Documentation</h1>
+        <p>Complete guide to using git.vet for repository security scanning</p>
+
+        <h2>Quick Start</h2>
+        <p>Add <code>git.vet/</code> to any git clone URL to scan for security issues:</p>
+        <pre><code>git clone https://git.vet/github.com/owner/repo</code></pre>
+
+        <h2>Scan Modes</h2>
+        <p>git.vet supports multiple output modes via URL prefixes:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Mode</th>
+                    <th>URL Pattern</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><span class="badge default">Default</span></td>
+                    <td><code>git.vet/github.com/owner/repo</code></td>
+                    <td>Security report only, clone fails intentionally</td>
+                </tr>
+                <tr>
+                    <td><span class="badge mode">clone</span></td>
+                    <td><code>git.vet/clone/github.com/owner/repo</code></td>
+                    <td>Scan + complete the clone</td>
+                </tr>
+                <tr>
+                    <td><span class="badge mode">plain</span></td>
+                    <td><code>git.vet/plain/github.com/owner/repo</code></td>
+                    <td>No unicode or colors (CI/CD friendly)</td>
+                </tr>
+                <tr>
+                    <td><span class="badge mode">json</span></td>
+                    <td><code>git.vet/json/github.com/owner/repo</code></td>
+                    <td>Machine-readable JSON output</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Clone Mode</h3>
+        <p>Get the security report and complete the clone:</p>
+        <pre><code>git clone https://git.vet/clone/github.com/owner/repo</code></pre>
+
+        <h3>Plain Mode</h3>
+        <p>ASCII-only output for terminals without unicode support:</p>
+        <pre><code>git clone https://git.vet/plain/github.com/owner/repo</code></pre>
+
+        <h3>JSON Mode</h3>
+        <p>Structured JSON output for automation and integrations:</p>
+        <pre><code>git clone https://git.vet/json/github.com/owner/repo 2>&1 | grep -o '{.*}'</code></pre>
+
+        <h2>Supported Hosts</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Platform</th>
+                    <th>Example URL</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>GitHub</td>
+                    <td><code>git.vet/github.com/owner/repo</code></td>
+                </tr>
+                <tr>
+                    <td>GitLab</td>
+                    <td><code>git.vet/gitlab.com/owner/repo</code></td>
+                </tr>
+                <tr>
+                    <td>Bitbucket</td>
+                    <td><code>git.vet/bitbucket.org/owner/repo</code></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>Private Repositories</h2>
+        <p>Scan private repos by including credentials in the URL. A 10-second consent delay is enforced:</p>
+        <pre><code>git clone https://username:token@git.vet/github.com/private/repo</code></pre>
+        <p>Your code is deleted immediately after scanning. Credentials are never logged.</p>
+
+        <h2>Web Reports</h2>
+        <p>Every scan generates a shareable web report:</p>
+        <pre><code># Report URL shown in scan output
+https://git.vet/r/{commit-sha}
+
+# View all scans for a repository
+https://git.vet/reports/github.com/owner/repo
+
+# Latest scan for a repository
+https://git.vet/reports/github.com/owner/repo/latest</code></pre>
+
+        <h2>SSH Access</h2>
+        <p>git.vet also supports SSH protocol:</p>
+        <pre><code>git clone ssh://git.vet/github.com/owner/repo</code></pre>
+
+        <h2>How It Works</h2>
+        <p>git.vet implements the git smart HTTP protocol:</p>
+        <ol style="margin-left: 24px; margin-bottom: 16px;">
+            <li>Intercepts your git clone request</li>
+            <li>Fetches the repository (shallow clone)</li>
+            <li>Scans with opengrep (fast, framework-agnostic static analysis)</li>
+            <li>Streams results via git protocol sideband</li>
+            <li>Intentionally fails the clone (or completes in <code>/clone/</code> mode)</li>
+        </ol>
+
+        <h2>Self-Hosting</h2>
+        <p>Run your own instance with Docker:</p>
+        <pre><code>docker run -p 8080:8080 ghcr.io/baocin/gitscan:latest</code></pre>
+        <p>See the <a href="https://github.com/baocin/gitscan">GitHub repository</a> for full installation instructions.</p>
+
+        <h2>API Reference</h2>
+        <h3>Metrics Endpoint</h3>
+        <pre><code>GET https://git.vet/metrics</code></pre>
+        <p>Returns JSON with server metrics (uptime, cache hits, scan times, etc.)</p>
+
+        <h3>Version Endpoint</h3>
+        <pre><code>GET https://git.vet/version</code></pre>
+        <p>Returns server version information</p>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>
+                <a href="https://github.com/baocin/gitscan">Open Source</a> ·
+                Powered by <a href="https://github.com/opengrep/opengrep">Opengrep</a> ·
+                Built with Go
+            </p>
+        </div>
+    </footer>
+</body>
+</html>
