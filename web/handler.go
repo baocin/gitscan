@@ -55,10 +55,25 @@ func (h *Handler) ServeStatic(w http.ResponseWriter, r *http.Request) {
 	h.staticServer.ServeHTTP(w, r)
 }
 
+// HomeData holds data for the homepage template
+type HomeData struct {
+	RecentScans []db.RecentScan
+}
+
 // ServeHome serves the marketing homepage
 func (h *Handler) ServeHome(w http.ResponseWriter, r *http.Request) {
+	data := HomeData{}
+
+	// Get recent public scans
+	if h.db != nil {
+		scans, err := h.db.GetRecentPublicScans(6)
+		if err == nil {
+			data.RecentScans = scans
+		}
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.templates.ExecuteTemplate(w, "index.html", nil); err != nil {
+	if err := h.templates.ExecuteTemplate(w, "index.html", data); err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
 }

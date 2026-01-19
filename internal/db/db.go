@@ -642,6 +642,93 @@ func (db *DB) GetCachedFileHashes(fileHashes []string, scanLevel string) (map[st
 	return results, rows.Err()
 }
 
+// RecentScan represents a scan for display on the homepage
+type RecentScan struct {
+	RepoURL       string
+	RepoName      string    // Short name (e.g., "owner/repo")
+	CommitSHA     string
+	ShortCommit   string    // First 8 chars
+	SecurityScore int
+	SecurityGrade string
+	CriticalCount int
+	HighCount     int
+	MediumCount   int
+	LowCount      int
+	TotalFindings int
+	FilesScanned  int
+	ScannedAt     time.Time
+	ReportID      string // Commit prefix for report URL
+}
+
+// GetRecentPublicScans retrieves the most recent scans from public git hosts
+func (db *DB) GetRecentPublicScans(limit int) ([]RecentScan, error) {
+	rows, err := db.conn.Query(`
+		SELECT r.url, s.commit_sha, COALESCE(s.security_score, 100),
+		       s.critical_count, s.high_count, s.medium_count, s.low_count,
+		       s.files_scanned, s.created_at
+		FROM scans s
+		JOIN repos r ON s.repo_id = r.id
+		WHERE r.url LIKE 'https://github.com/%'
+		   OR r.url LIKE 'https://gitlab.com/%'
+		   OR r.url LIKE 'https://bitbucket.org/%'
+		ORDER BY s.created_at DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var scans []RecentScan
+	for rows.Next() {
+		var rs RecentScan
+		err := rows.Scan(&rs.RepoURL, &rs.CommitSHA, &rs.SecurityScore,
+			&rs.CriticalCount, &rs.HighCount, &rs.MediumCount, &rs.LowCount,
+			&rs.FilesScanned, &rs.ScannedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		// Extract repo name from URL (e.g., "github.com/owner/repo" -> "owner/repo")
+		rs.RepoName = strings.TrimPrefix(rs.RepoURL, "https://github.com/")
+		rs.RepoName = strings.TrimPrefix(rs.RepoName, "https://gitlab.com/")
+		rs.RepoName = strings.TrimPrefix(rs.RepoName, "https://bitbucket.org/")
+
+		// Generate short commit and report ID
+		if len(rs.CommitSHA) > 8 {
+			rs.ShortCommit = rs.CommitSHA[:8]
+			rs.ReportID = rs.CommitSHA[:8]
+		} else {
+			rs.ShortCommit = rs.CommitSHA
+			rs.ReportID = rs.CommitSHA
+		}
+
+		// Calculate grade
+		rs.SecurityGrade = scoreGrade(rs.SecurityScore)
+		rs.TotalFindings = rs.CriticalCount + rs.HighCount + rs.MediumCount + rs.LowCount
+
+		scans = append(scans, rs)
+	}
+
+	return scans, rows.Err()
+}
+
+// scoreGrade returns a letter grade for a security score
+func scoreGrade(score int) string {
+	switch {
+	case score >= 90:
+		return "A"
+	case score >= 80:
+		return "B"
+	case score >= 70:
+		return "C"
+	case score >= 60:
+		return "D"
+	default:
+		return "F"
+	}
+}
+
 // LinkFilesToScan records which files were part of a scan
 func (db *DB) LinkFilesToScan(scanID int64, files []ScanFile) error {
 	if len(files) == 0 {

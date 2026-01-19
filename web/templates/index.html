@@ -380,6 +380,114 @@
             color: var(--green);
         }
 
+        /* Recent Scans */
+        .recent-scans {
+            padding: 80px 0;
+            border-top: 1px solid var(--border);
+        }
+
+        .recent-scans h2 {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 16px;
+        }
+
+        .recent-scans .subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 40px;
+        }
+
+        .scans-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 20px;
+        }
+
+        .scan-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            text-decoration: none;
+            transition: border-color 0.2s, transform 0.2s;
+            display: block;
+        }
+
+        .scan-card:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .scan-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .scan-repo {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.95rem;
+            color: var(--text);
+            word-break: break-all;
+        }
+
+        .scan-grade {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+            margin-left: 12px;
+        }
+
+        .scan-grade.grade-a { background: var(--green); color: var(--bg); }
+        .scan-grade.grade-b { background: #7ee787; color: var(--bg); }
+        .scan-grade.grade-c { background: var(--yellow); color: var(--bg); }
+        .scan-grade.grade-d { background: #f0883e; color: var(--bg); }
+        .scan-grade.grade-f { background: var(--red); color: white; }
+
+        .scan-stats {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .scan-stat {
+            font-size: 0.85rem;
+        }
+
+        .scan-stat.critical { color: var(--red); }
+        .scan-stat.high { color: #f0883e; }
+        .scan-stat.medium { color: var(--yellow); }
+        .scan-stat.low { color: var(--text-muted); }
+
+        .scan-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .scan-commit {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .no-scans {
+            text-align: center;
+            color: var(--text-muted);
+            padding: 40px;
+            background: var(--bg-secondary);
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+        }
+
         /* CTA */
         .cta {
             padding: 100px 0;
@@ -460,9 +568,9 @@
         <div class="container header-content">
             <a href="/" class="logo">git<span>.vet</span></a>
             <nav>
+                <a href="#recent-scans">Recent Scans</a>
                 <a href="/pricing">Pricing</a>
                 <a href="https://github.com/baocin/gitscan">GitHub</a>
-                <a href="https://github.com/baocin/gitscan/blob/main/MASTER_PLAN.md">Docs</a>
             </nav>
         </div>
     </header>
@@ -572,8 +680,8 @@
                 </div>
                 <div class="feature">
                     <div class="feature-icon">📊</div>
-                    <h3>Beautiful Web Reports</h3>
-                    <p>Scan with QR code linking to a shareable web report. Full findings with code snippets, severity levels, and remediation tips - all in your browser.</p>
+                    <h3>Shareable Web Reports</h3>
+                    <p>Every scan generates a permanent web report with security grades, code snippets, and detailed findings. Share the link with your team or browse recent scans below.</p>
                 </div>
                 <div class="feature">
                     <div class="feature-icon">🌐</div>
@@ -601,6 +709,40 @@
                     <span class="prefix">git.vet/</span><code>bitbucket.org/owner/repo</code>
                 </div>
             </div>
+        </div>
+    </section>
+
+    <section class="recent-scans" id="recent-scans">
+        <div class="container">
+            <h2>Recently Scanned Public Repos</h2>
+            <p class="subtitle">See real security scan results from the community</p>
+            {{if .RecentScans}}
+            <div class="scans-grid">
+                {{range .RecentScans}}
+                <a href="/r/{{.ReportID}}" class="scan-card">
+                    <div class="scan-header">
+                        <span class="scan-repo">{{.RepoName}}</span>
+                        <span class="scan-grade grade-{{.SecurityGrade | lower}}">{{.SecurityGrade}}</span>
+                    </div>
+                    <div class="scan-stats">
+                        {{if .CriticalCount}}<span class="scan-stat critical">{{.CriticalCount}} Critical</span>{{end}}
+                        {{if .HighCount}}<span class="scan-stat high">{{.HighCount}} High</span>{{end}}
+                        {{if .MediumCount}}<span class="scan-stat medium">{{.MediumCount}} Medium</span>{{end}}
+                        {{if .LowCount}}<span class="scan-stat low">{{.LowCount}} Low</span>{{end}}
+                        {{if eq .TotalFindings 0}}<span class="scan-stat" style="color: var(--green);">No issues found</span>{{end}}
+                    </div>
+                    <div class="scan-meta">
+                        <span>{{.FilesScanned}} files scanned</span>
+                        <span class="scan-commit">{{.ShortCommit}}</span>
+                    </div>
+                </a>
+                {{end}}
+            </div>
+            {{else}}
+            <div class="no-scans">
+                <p>No recent scans yet. Be the first to scan a repo!</p>
+            </div>
+            {{end}}
         </div>
     </section>
 
