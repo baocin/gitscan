@@ -233,76 +233,6 @@
         .highlight-red { color: var(--red); }
         .highlight-blue { color: var(--accent); }
 
-        /* The Formula */
-        .formula {
-            padding: 80px 0;
-            text-align: center;
-            border-top: 1px solid var(--border);
-        }
-
-        .formula h2 {
-            font-size: 2rem;
-            margin-bottom: 40px;
-        }
-
-        .formula-box {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 40px;
-            max-width: 700px;
-            margin: 0 auto;
-        }
-
-        .formula-equation {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 1.3rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 16px;
-            flex-wrap: wrap;
-        }
-
-        .formula-part {
-            padding: 12px 20px;
-            border-radius: 8px;
-            background: var(--bg);
-        }
-
-        .formula-part.prefix {
-            color: var(--green);
-            border: 2px solid var(--green);
-        }
-
-        .formula-plus {
-            color: var(--text-muted);
-            font-size: 1.5rem;
-        }
-
-        .formula-part.any-url {
-            color: var(--accent);
-            border: 2px dashed var(--accent);
-        }
-
-        .formula-examples {
-            margin-top: 32px;
-            text-align: left;
-        }
-
-        .formula-example {
-            padding: 12px 16px;
-            background: var(--bg);
-            border-radius: 8px;
-            margin-bottom: 8px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.9rem;
-        }
-
-        .formula-example .prefix {
-            color: var(--green);
-        }
-
         /* Features */
         .features {
             padding: 80px 0;
@@ -343,7 +273,7 @@
             font-size: 0.95rem;
         }
 
-        /* Supported Hosts */
+        /* Report Preview */
         .hosts {
             padding: 80px 0;
             border-top: 1px solid var(--border);
@@ -352,32 +282,130 @@
         .hosts h2 {
             text-align: center;
             font-size: 2rem;
-            margin-bottom: 40px;
+            margin-bottom: 16px;
         }
 
-        .hosts-grid {
-            display: flex;
-            justify-content: center;
-            gap: 24px;
-            flex-wrap: wrap;
-            margin-bottom: 40px;
-        }
-
-        .host-card {
+        .report-preview {
             background: var(--bg-secondary);
             border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 20px 32px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.9rem;
+            border-radius: 12px;
+            max-width: 900px;
+            margin: 0 auto;
+            overflow: hidden;
         }
 
-        .host-card code {
+        .report-preview-header {
+            background: var(--bg);
+            padding: 24px 32px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .report-preview-title {
+            font-size: 1.1rem;
+            margin-bottom: 16px;
+        }
+
+        .report-preview-stats {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .stat {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .stat.critical {
+            background: rgba(248, 81, 73, 0.1);
+            color: var(--red);
+            border: 1px solid var(--red);
+        }
+
+        .stat.high {
+            background: rgba(210, 153, 34, 0.1);
+            color: var(--yellow);
+            border: 1px solid var(--yellow);
+        }
+
+        .stat.medium {
+            background: rgba(88, 166, 255, 0.1);
             color: var(--accent);
+            border: 1px solid var(--accent);
         }
 
-        .host-card .prefix {
-            color: var(--green);
+        .report-preview-findings {
+            padding: 24px 32px;
+        }
+
+        .finding {
+            margin-bottom: 24px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .finding:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .finding-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .severity {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .severity.critical {
+            background: var(--red);
+            color: var(--bg);
+        }
+
+        .severity.high {
+            background: var(--yellow);
+            color: var(--bg);
+        }
+
+        .severity.medium {
+            background: var(--accent);
+            color: var(--bg);
+        }
+
+        .finding-title {
+            color: var(--text);
+            font-weight: 500;
+        }
+
+        .finding-file {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .finding-code {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px 16px;
+            overflow-x: auto;
+        }
+
+        .finding-code code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--text);
         }
 
         /* CTA */
@@ -443,10 +471,6 @@
 
             .transform-url {
                 font-size: 0.85rem;
-            }
-
-            .formula-equation {
-                font-size: 1rem;
             }
 
             nav {
@@ -521,31 +545,6 @@
         </div>
     </section>
 
-    <section class="formula">
-        <div class="container">
-            <h2>The Formula</h2>
-            <div class="formula-box">
-                <div class="formula-equation">
-                    <div class="formula-part prefix">git.vet/</div>
-                    <span class="formula-plus">+</span>
-                    <div class="formula-part any-url">any git clone URL</div>
-                </div>
-
-                <div class="formula-examples">
-                    <div class="formula-example">
-                        git clone https://<span class="prefix">git.vet/</span>github.com/facebook/react
-                    </div>
-                    <div class="formula-example">
-                        git clone https://<span class="prefix">git.vet/</span>gitlab.com/inkscape/inkscape
-                    </div>
-                    <div class="formula-example">
-                        git clone https://<span class="prefix">git.vet/</span>bitbucket.org/atlassian/python-bitbucket
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
     <section class="features">
         <div class="container">
             <h2>Why git.vet?</h2>
@@ -586,19 +585,49 @@
 
     <section class="hosts">
         <div class="container">
-            <h2>Works With Any Git Host</h2>
-            <div class="hosts-grid">
-                <div class="host-card">
-                    GitHub<br>
-                    <span class="prefix">git.vet/</span><code>github.com/owner/repo</code>
+            <h2>Beautiful Web Reports</h2>
+            <p style="text-align: center; color: var(--text-muted); max-width: 700px; margin: 0 auto 40px;">
+                Every scan generates a shareable web report with detailed findings, code snippets, and remediation tips.
+            </p>
+            <div class="report-preview">
+                <div class="report-preview-header">
+                    <div class="report-preview-title">
+                        <span style="color: var(--accent); font-family: 'JetBrains Mono', monospace;">github.com/OWASP/NodeGoat</span>
+                    </div>
+                    <div class="report-preview-stats">
+                        <span class="stat critical">3 Critical</span>
+                        <span class="stat high">7 High</span>
+                        <span class="stat medium">12 Medium</span>
+                    </div>
                 </div>
-                <div class="host-card">
-                    GitLab<br>
-                    <span class="prefix">git.vet/</span><code>gitlab.com/owner/repo</code>
-                </div>
-                <div class="host-card">
-                    Bitbucket<br>
-                    <span class="prefix">git.vet/</span><code>bitbucket.org/owner/repo</code>
+                <div class="report-preview-findings">
+                    <div class="finding">
+                        <div class="finding-header">
+                            <span class="severity critical">Critical</span>
+                            <span class="finding-title">SQL Injection via string concatenation</span>
+                        </div>
+                        <div class="finding-file">app/routes/session.js:42</div>
+                        <div class="finding-code">
+                            <code>db.query("SELECT * FROM users WHERE id = '" + userId + "'")</code>
+                        </div>
+                    </div>
+                    <div class="finding">
+                        <div class="finding-header">
+                            <span class="severity high">High</span>
+                            <span class="finding-title">Hardcoded JWT secret key</span>
+                        </div>
+                        <div class="finding-file">config/env/development.js:8</div>
+                        <div class="finding-code">
+                            <code>jwtSecret: "super-secret-key"</code>
+                        </div>
+                    </div>
+                    <div class="finding">
+                        <div class="finding-header">
+                            <span class="severity medium">Medium</span>
+                            <span class="finding-title">Missing rate limiting on authentication</span>
+                        </div>
+                        <div class="finding-file">app/routes/auth.js:15</div>
+                    </div>
                 </div>
             </div>
         </div>
