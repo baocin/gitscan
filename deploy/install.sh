@@ -82,8 +82,17 @@ cd gitscan
 go build -o /opt/gitvet/gitvet-server ./cmd/gitscan-server
 chown gitvet:gitvet /opt/gitvet/gitvet-server
 chmod 755 /opt/gitvet/gitvet-server
-setcap 'cap_net_bind_service=+ep' /opt/gitvet/gitvet-server
-echo "Built and installed gitvet-server with execute permissions and capability to bind to privileged ports"
+
+# Grant capability to bind to privileged ports
+if setcap 'cap_net_bind_service=+ep' /opt/gitvet/gitvet-server; then
+    CAP_CHECK=$(getcap /opt/gitvet/gitvet-server 2>/dev/null)
+    echo "Built and installed gitvet-server with execute permissions"
+    echo "Capability set: $CAP_CHECK"
+else
+    echo "ERROR: Failed to set capability for privileged ports!"
+    echo "Run manually: sudo setcap 'cap_net_bind_service=+ep' /opt/gitvet/gitvet-server"
+    exit 1
+fi
 
 # Install deployment scripts for future updates
 mkdir -p /opt/gitvet/scripts

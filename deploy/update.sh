@@ -157,8 +157,17 @@ fi
 
 # Grant capability to bind to privileged ports (< 1024)
 log_info "Granting capability to bind to privileged ports..."
-if ! setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/$BINARY_NAME"; then
-    log_warn "Failed to set capability, SSH on port 22 may not work"
+if setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/$BINARY_NAME"; then
+    # Verify capability was set
+    CURRENT_CAP=$(getcap "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null)
+    if [[ "$CURRENT_CAP" == *"cap_net_bind_service"* ]]; then
+        log_info "Capability set successfully: $CURRENT_CAP"
+    else
+        log_warn "Capability may not have been set correctly. Current: $CURRENT_CAP"
+    fi
+else
+    log_error "Failed to set capability - privileged ports (22, 80, 443) will not work!"
+    log_warn "You may need to run manually: sudo setcap 'cap_net_bind_service=+ep' $INSTALL_DIR/$BINARY_NAME"
 fi
 
 # Update systemd service configuration
