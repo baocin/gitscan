@@ -393,7 +393,13 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 				h.metrics.CacheHits.Add(1)
 			}
 			sb.WriteProgressf("%s [git.vet] Using cached scan results", IconSuccess)
-			h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true)
+
+			// Output format based on mode
+			if parsed.Mode == "json" {
+				h.writeJSONReport(sb, parsed, repo, cachedScan)
+			} else {
+				h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true)
+			}
 
 			// Log cache hit request
 			responseTime := time.Since(startTime)
@@ -511,7 +517,12 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 	h.db.CreateScan(dbScan)
 
 	// Step 5: Write report
-	h.writeScanReport(sb, report, parsed, repo, dbScan, boxWidth, false)
+	// Output format based on mode
+	if parsed.Mode == "json" {
+		h.writeJSONReport(sb, parsed, repo, dbScan)
+	} else {
+		h.writeScanReport(sb, report, parsed, repo, dbScan, boxWidth, false)
+	}
 
 	// Log request
 	responseTime := time.Since(startTime)
@@ -550,25 +561,6 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	if cacheHit {
 		report.WriteBoxLine(sb.Color(Cyan, "(cached result)"), width)
 	}
-
-	// Security Score
-	report.WriteBoxMiddle(width)
-	grade := scanner.ScoreGrade(scan.SecurityScore)
-	var scoreColor string
-	switch {
-	case scan.SecurityScore >= 90:
-		scoreColor = Green
-	case scan.SecurityScore >= 70:
-		scoreColor = Yellow
-	case scan.SecurityScore >= 50:
-		scoreColor = Yellow
-	default:
-		scoreColor = Red
-	}
-	scoreLine := fmt.Sprintf("Security Score: %s  %s",
-		sb.Color(scoreColor, fmt.Sprintf("%d/100", scan.SecurityScore)),
-		sb.Color(scoreColor, fmt.Sprintf("(%s)", grade)))
-	report.WriteBoxLine(scoreLine, width)
 
 	// Summary line
 	report.WriteBoxMiddle(width)
@@ -617,20 +609,50 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 		}
 	}
 
-	// Report URL section
+	// Bottom section - organized for clarity
+	report.WriteBoxMiddle(width)
+	report.WriteBoxLine("", width) // Empty line for spacing
+
+	// Security Score
+	grade := scanner.ScoreGrade(scan.SecurityScore)
+	var scoreColor string
+	var scoreIcon string
+	switch {
+	case scan.SecurityScore >= 90:
+		scoreColor = Green
+		scoreIcon = "✓"
+	case scan.SecurityScore >= 70:
+		scoreColor = Yellow
+		scoreIcon = "⚠"
+	case scan.SecurityScore >= 50:
+		scoreColor = Yellow
+		scoreIcon = "⚠"
+	default:
+		scoreColor = Red
+		scoreIcon = "✗"
+	}
+	scoreLine := fmt.Sprintf("%s %s: %s",
+		sb.Color(scoreColor, scoreIcon),
+		sb.Color(scoreColor, sb.Bold("SECURITY SCORE")),
+		sb.Color(scoreColor, sb.Bold(fmt.Sprintf("%d/100 (%s)", scan.SecurityScore, grade))))
+	report.WriteBoxLine(scoreLine, width)
+
+	// Severity counts
+	report.WriteBoxMiddle(width)
+	summaryLineBottom := fmt.Sprintf("%s %d Critical   %s %d High   %s %d Medium   %s %d Low",
+		sb.Color(Red, IconCritical), scan.CriticalCount,
+		sb.Color(Yellow, IconHigh), scan.HighCount,
+		sb.Color(Blue, IconMedium), scan.MediumCount,
+		IconLow, scan.LowCount,
+	)
+	report.WriteBoxLine(summaryLineBottom, width)
+
+	// Report URL
 	report.WriteBoxMiddle(width)
 	reportURL := fmt.Sprintf("https://git.vet/r/%s", truncate(scan.CommitSHA, 8))
 	report.WriteBoxLine(fmt.Sprintf("Full report: %s", reportURL), width)
-	report.WriteBoxLine("", width)
 
-	// QR Code - generate a real, scannable QR code linking to the report
-	qrLines := GenerateScaledQR(reportURL)
-	for _, line := range qrLines {
-		report.WriteBoxLineCentered(line, width)
-	}
-	report.WriteBoxLineCentered("^ Scan QR to view full report ^", width)
-
-	// Clone URL
+	// Clone command
 	report.WriteBoxMiddle(width)
 	cloneURL := fmt.Sprintf("https://%s/%s/%s", parsed.Host, parsed.Owner, parsed.Repo)
 	report.WriteBoxLine(fmt.Sprintf("To clone: git clone %s", cloneURL), width)
@@ -640,6 +662,71 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	report.WriteBoxLine(fmt.Sprintf("Questions? %s", sb.Color(Cyan, "gitvet@steele.red")), width)
 	report.WriteBoxBottom(width)
 
+	sb.WriteEmptyLine()
+}
+
+// writeJSONReport outputs scan results as JSON
+func (h *Handler) writeJSONReport(sb *SidebandWriter, parsed *ParsedPath, repo *cache.CachedRepo, scan *db.Scan) {
+	// Create JSON output structure
+	type JSONOutput struct {
+		Repository      string `json:"repository"`
+		CommitSHA       string `json:"commit_sha"`
+		License         string `json:"license,omitempty"`
+		SecurityScore   int    `json:"security_score"`
+		Grade           string `json:"grade"`
+		CriticalCount   int    `json:"critical_count"`
+		HighCount       int    `json:"high_count"`
+		MediumCount     int    `json:"medium_count"`
+		LowCount        int    `json:"low_count"`
+		InfoCount       int    `json:"info_count"`
+		FilesScanned    int    `json:"files_scanned"`
+		ScanDurationMS  int64  `json:"scan_duration_ms"`
+		ScanLevel       string `json:"scan_level,omitempty"`
+		IsPartial       bool   `json:"is_partial,omitempty"`
+		PartialReason   string `json:"partial_reason,omitempty"`
+		Findings        json.RawMessage `json:"findings"`
+		ReportURL       string `json:"report_url"`
+	}
+
+	// Prepare findings JSON
+	var findingsJSON json.RawMessage
+	if scan.ResultsJSON != "" {
+		findingsJSON = json.RawMessage(scan.ResultsJSON)
+	} else {
+		findingsJSON = json.RawMessage("[]")
+	}
+
+	// Build output
+	output := JSONOutput{
+		Repository:     parsed.FullPath,
+		CommitSHA:      scan.CommitSHA,
+		License:        repo.License,
+		SecurityScore:  scan.SecurityScore,
+		Grade:          scanner.ScoreGrade(scan.SecurityScore),
+		CriticalCount:  scan.CriticalCount,
+		HighCount:      scan.HighCount,
+		MediumCount:    scan.MediumCount,
+		LowCount:       scan.LowCount,
+		InfoCount:      scan.InfoCount,
+		FilesScanned:   scan.FilesScanned,
+		ScanDurationMS: scan.ScanDurationMS,
+		ScanLevel:      scan.ScanLevel,
+		IsPartial:      scan.IsPartial,
+		PartialReason:  scan.PartialReason,
+		Findings:       findingsJSON,
+		ReportURL:      fmt.Sprintf("https://git.vet/r/%s", truncate(scan.CommitSHA, 8)),
+	}
+
+	// Marshal to JSON
+	jsonBytes, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		sb.WriteError(fmt.Sprintf("Failed to generate JSON: %v", err))
+		return
+	}
+
+	// Write JSON output
+	sb.WriteEmptyLine()
+	sb.WriteProgress(string(jsonBytes))
 	sb.WriteEmptyLine()
 }
 

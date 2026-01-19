@@ -39,6 +39,7 @@ func main() {
 		tlsKey       = flag.String("tls-key", "", "TLS private key file")
 		dbPath       = flag.String("db", "gitscan.db", "SQLite database path")
 		cacheDir     = flag.String("cache-dir", "/tmp/gitscan-cache", "Repository cache directory")
+		maxFileSize  = flag.Int64("max-file-size", 1048576, "Max file size to download in bytes (default: 1MB)")
 		openGrepPath = flag.String("opengrep", "opengrep", "Path to opengrep binary")
 		rulesPath    = flag.String("rules", "", "Path to opengrep rules directory")
 		scanTimeout  = flag.Int("scan-timeout", 180, "Scan timeout in seconds (default: 180s/3min)")
@@ -72,11 +73,12 @@ func main() {
 	// Initialize cache
 	cacheCfg := cache.DefaultConfig()
 	cacheCfg.CacheDir = *cacheDir
+	cacheCfg.MaxFileSize = *maxFileSize
 	repoCache, err := cache.New(database, cacheCfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize cache: %v", err)
 	}
-	log.Printf("Cache directory: %s", *cacheDir)
+	log.Printf("Cache directory: %s, max file size: %d bytes", *cacheDir, *maxFileSize)
 
 	// Initialize scanner
 	scannerCfg := scanner.DefaultConfig()

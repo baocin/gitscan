@@ -137,6 +137,7 @@ type RepoCache struct {
 
 	// Configuration
 	maxRepoSize   int64         // Maximum repo size in bytes
+	maxFileSize   int64         // Maximum individual file size to download (git partial clone)
 	staleAfter    time.Duration // Re-fetch repos older than this
 	cloneTimeout  time.Duration
 	fetchTimeout  time.Duration
@@ -146,6 +147,7 @@ type RepoCache struct {
 type Config struct {
 	CacheDir     string
 	MaxRepoSize  int64
+	MaxFileSize  int64         // Maximum individual file size to download (git partial clone)
 	StaleAfter   time.Duration
 	CloneTimeout time.Duration
 	FetchTimeout time.Duration
@@ -162,6 +164,7 @@ func DefaultConfig() Config {
 	return Config{
 		CacheDir:     cacheDir,
 		MaxRepoSize:  500 * 1024 * 1024, // 500MB
+		MaxFileSize:  1 * 1024 * 1024,   // 1MB (matches Normal scan level)
 		StaleAfter:   1 * time.Hour,
 		CloneTimeout: 120 * time.Second,
 		FetchTimeout: 60 * time.Second,
@@ -192,6 +195,7 @@ func New(database *db.DB, cfg Config) (*RepoCache, error) {
 		db:           database,
 		cacheDir:     cfg.CacheDir,
 		maxRepoSize:  cfg.MaxRepoSize,
+		maxFileSize:  cfg.MaxFileSize,
 		staleAfter:   cfg.StaleAfter,
 		cloneTimeout: cfg.CloneTimeout,
 		fetchTimeout: cfg.FetchTimeout,
@@ -275,16 +279,23 @@ func (c *RepoCache) cloneRepo(ctx context.Context, repoPath, repoURL string, pro
 	ctx, cancel := context.WithTimeout(ctx, c.cloneTimeout)
 	defer cancel()
 
-	log.Printf("[cache] Cloning %s (timeout: %v)", repoPath, c.cloneTimeout)
+	log.Printf("[cache] Cloning %s (timeout: %v, max file size: %d bytes)", repoPath, c.cloneTimeout, c.maxFileSize)
 	cloneStart := time.Now()
 
-	cmd := exec.CommandContext(ctx, "git", "clone",
+	// Build git clone command with partial clone filtering to skip large files
+	args := []string{"clone",
 		"--depth", "1",
 		"--single-branch",
 		"--no-tags",
-		repoURL,
-		localPath,
-	)
+	}
+
+	// Add file size filter if configured (skips files larger than opengrep will scan)
+	if c.maxFileSize > 0 {
+		args = append(args, "--filter", fmt.Sprintf("blob:limit=%d", c.maxFileSize))
+	}
+
+	args = append(args, repoURL, localPath)
+	cmd := exec.CommandContext(ctx, "git", args...)
 
 	output, err := cmd.CombinedOutput()
 	cloneDuration := time.Since(cloneStart)
@@ -371,20 +382,27 @@ func (c *RepoCache) updateRepo(ctx context.Context, dbRepo *db.Repo, progressFn 
 			progressFn("Re-cloning missing directory...")
 		}
 
-		log.Printf("[cache] Re-cloning to existing path %s (timeout: %v)", dbRepo.LocalPath, c.cloneTimeout)
+		log.Printf("[cache] Re-cloning to existing path %s (timeout: %v, max file size: %d bytes)", dbRepo.LocalPath, c.cloneTimeout, c.maxFileSize)
 		cloneStart := time.Now()
 
 		// Clone with timeout
 		cloneCtx, cancel := context.WithTimeout(ctx, c.cloneTimeout)
 		defer cancel()
 
-		cmd := exec.CommandContext(cloneCtx, "git", "clone",
+		// Build git clone command with partial clone filtering
+		args := []string{"clone",
 			"--depth", "1",
 			"--single-branch",
 			"--no-tags",
-			repoURL,
-			dbRepo.LocalPath,
-		)
+		}
+
+		// Add file size filter if configured
+		if c.maxFileSize > 0 {
+			args = append(args, "--filter", fmt.Sprintf("blob:limit=%d", c.maxFileSize))
+		}
+
+		args = append(args, repoURL, dbRepo.LocalPath)
+		cmd := exec.CommandContext(cloneCtx, "git", args...)
 
 		output, err := cmd.CombinedOutput()
 		cloneDuration := time.Since(cloneStart)
