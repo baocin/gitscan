@@ -142,22 +142,37 @@ scan_repo() {
     fi
 
     local repo_dir="${TEMP_DIR}/$(echo "$repo" | tr '/' '_')"
+    local output_file="${TEMP_DIR}/output_${index}.log"
 
     log_info "[$index/$TOTAL] Scanning $repo..."
 
-    # Clone with timeout
-    if timeout 300 git clone --depth 1 "$clone_url" "$repo_dir" > /dev/null 2>&1; then
-        log_success "[$index/$TOTAL] $repo - Scan completed"
-        rm -rf "$repo_dir"
+    # Clone with timeout, capture output
+    timeout 300 git clone --depth 1 "$clone_url" "$repo_dir" > "$output_file" 2>&1
+    local exit_code=$?
+
+    # Check if scan actually completed by looking for git.vet output
+    # The scan can complete successfully even if git clone returns non-zero
+    if grep -q "git.vet.*Scan complete\|GIT.VET SECURITY REPORT\|findings" "$output_file"; then
+        # Extract findings count if available
+        local findings=$(grep -oP '\d+ findings' "$output_file" | head -1 || echo "")
+        if [ -n "$findings" ]; then
+            log_success "[$index/$TOTAL] $repo - Scan completed ($findings)"
+        else
+            log_success "[$index/$TOTAL] $repo - Scan completed"
+        fi
+        rm -rf "$repo_dir" "$output_file"
         return 0
     else
-        local exit_code=$?
+        # Check actual failure reason
         if [ $exit_code -eq 124 ]; then
             log_warn "[$index/$TOTAL] $repo - Timeout (>5min)"
+        elif grep -q "fatal:\|error:" "$output_file"; then
+            local error_msg=$(grep -m1 "fatal:\|error:" "$output_file" | cut -c1-60)
+            log_error "[$index/$TOTAL] $repo - Failed: $error_msg"
         else
             log_error "[$index/$TOTAL] $repo - Failed (exit code: $exit_code)"
         fi
-        rm -rf "$repo_dir" 2>/dev/null || true
+        rm -rf "$repo_dir" "$output_file" 2>/dev/null || true
         return 1
     fi
 }
