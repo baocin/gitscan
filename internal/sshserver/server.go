@@ -224,6 +224,23 @@ func (s *Server) handleGitCommand(conn *ssh.ServerConn, channel ssh.Channel, com
 		clientIP = clientIP[:idx] // Strip port
 	}
 
+	// Log SSH request BEFORE any processing
+	log.Printf("[ssh] Logging request to database...")
+	if err := s.db.LogRequest(&db.Request{
+		IP:                clientIP,
+		SSHKeyFingerprint: fingerprint,
+		UserAgent:         fmt.Sprintf("git-ssh/%s", conn.User()),
+		RepoURL:           parsed.FullPath,
+		RequestMode:       parsed.Mode,
+		RequestType:       "ssh_upload_pack",
+		HTTPMethod:        "SSH",
+		Success:           true,
+		ResponseTimeMS:    0,
+	}); err != nil {
+		log.Printf("[ssh] Warning: Failed to log request: %v", err)
+	}
+	log.Printf("[ssh] Request logged successfully")
+
 	// Create context for the scan
 	ctx := context.Background()
 	startTime := time.Now()

@@ -98,6 +98,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Detect if this is a private repo request (has auth header)
 	isPrivate := hasAuthHeader(r)
 
+	// Log HTTP request BEFORE any processing (matches SSH behavior)
+	if err := h.db.LogRequest(&db.Request{
+		IP:             clientIP,
+		UserAgent:      r.Header.Get("User-Agent"),
+		Referer:        r.Header.Get("Referer"),
+		GitVersion:     parseGitVersion(r.Header.Get("User-Agent")),
+		RepoURL:        parsed.FullPath,
+		RequestMode:    parsed.Mode,
+		RequestType:    "http_request",
+		HTTPMethod:     r.Method,
+		Success:        true,
+		ResponseTimeMS: 0,
+		QueryParams:    serializeQueryParams(r),
+	}); err != nil {
+		log.Printf("[http] Warning: Failed to log request: %v", err)
+	}
+
 	// Check rate limit (use full path as identifier)
 	if allowed, msg := h.limiter.Allow(clientIP, parsed.FullPath); !allowed {
 		h.writeRateLimitResponse(w, msg)
