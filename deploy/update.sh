@@ -267,26 +267,22 @@ else
     log_warn "Let's Encrypt certificates not found at /etc/letsencrypt/live"
 fi
 
-# Clear cache and reset database if needed
-log_info "Resetting cache..."
-# Look for reset_cache.sh: installed location, temp directory, or script directory
-RESET_CACHE_SCRIPT=""
-if [ -f "/opt/gitvet/scripts/reset_cache.sh" ]; then
-    RESET_CACHE_SCRIPT="/opt/gitvet/scripts/reset_cache.sh"
-elif [ -f "$TEMP_DIR/deploy/reset_cache.sh" ]; then
-    RESET_CACHE_SCRIPT="$TEMP_DIR/deploy/reset_cache.sh"
-elif [ -f "./deploy/reset_cache.sh" ]; then
-    RESET_CACHE_SCRIPT="./deploy/reset_cache.sh"
-elif [ -f "$(dirname "${BASH_SOURCE[0]}")/reset_cache.sh" ]; then
-    RESET_CACHE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/reset_cache.sh"
-fi
-
-if [ -n "$RESET_CACHE_SCRIPT" ]; then
-    if ! "$RESET_CACHE_SCRIPT" --quiet; then
-        log_warn "Cache reset failed, continuing anyway..."
+# Clear cache (but preserve database by default)
+log_info "Clearing file cache (database preserved)..."
+CACHE_DIR="/var/lib/gitvet/cache"
+if [ -d "$CACHE_DIR" ]; then
+    FILE_COUNT=$(find "$CACHE_DIR" -type f 2>/dev/null | wc -l || echo "0")
+    rm -rf "$CACHE_DIR"/* 2>/dev/null || log_warn "Failed to clear cache, continuing anyway..."
+    if [ "$FILE_COUNT" != "0" ]; then
+        log_info "Removed $FILE_COUNT cached files"
     fi
 else
-    log_warn "reset_cache.sh not found, skipping cache reset"
+    log_info "Cache directory does not exist (will be created on start)"
+fi
+
+# Ensure correct ownership
+if id "gitvet" &>/dev/null; then
+    chown -R gitvet:gitvet /var/lib/gitvet 2>/dev/null || true
 fi
 
 # Install/update opengrep if needed
