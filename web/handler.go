@@ -253,7 +253,8 @@ func (h *Handler) serveLatestReport(w http.ResponseWriter, r *http.Request, repo
 	}
 
 	if scan == nil {
-		http.Error(w, "No scans found for this repository", http.StatusNotFound)
+		// Redirect to listing page which shows styled "no scans" message
+		http.Redirect(w, r, "/reports/"+repoURL, http.StatusFound)
 		return
 	}
 
