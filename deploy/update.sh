@@ -155,6 +155,12 @@ if ! chown gitvet:gitvet "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null; then
     log_warn "Failed to set ownership to gitvet:gitvet, file may still be owned by root"
 fi
 
+# Grant capability to bind to privileged ports (< 1024)
+log_info "Granting capability to bind to privileged ports..."
+if ! setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/$BINARY_NAME"; then
+    log_warn "Failed to set capability, SSH on port 22 may not work"
+fi
+
 # Update systemd service configuration
 log_info "Updating systemd service configuration..."
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"

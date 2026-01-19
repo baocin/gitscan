@@ -82,7 +82,8 @@ cd gitscan
 go build -o /opt/gitvet/gitvet-server ./cmd/gitscan-server
 chown gitvet:gitvet /opt/gitvet/gitvet-server
 chmod 755 /opt/gitvet/gitvet-server
-echo "Built and installed gitvet-server with execute permissions"
+setcap 'cap_net_bind_service=+ep' /opt/gitvet/gitvet-server
+echo "Built and installed gitvet-server with execute permissions and capability to bind to privileged ports"
 
 # Install deployment scripts for future updates
 mkdir -p /opt/gitvet/scripts
