@@ -1,0 +1,50 @@
+rules:
+  - id: malicious-git-submodules
+    message: Git submodules configuration detected - potential auto-execution risk (CVE-2024-32002)
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: MEDIUM
+      references:
+        - "https://github.com/git/git/security/advisories/GHSA-8prw-h3cq-mghm"
+        - "https://www.cve.news/cve-2024-32002/"
+    languages: [generic]
+    paths:
+      include:
+        - ".gitmodules"
+    patterns:
+      - pattern-either:
+          # Any .gitmodules file is suspicious for auto-execution
+          - pattern-regex: '^\[submodule.*\]'
+
+          # Suspicious path traversal patterns
+          - pattern-regex: '\.\./.*\.git'
+          - pattern-regex: 'path\s*=\s*.*\.\./.*hooks'
+
+          # Suspicious URLs
+          - pattern-regex: 'url\s*=.*file://'
+          - pattern-regex: 'url\s*=.*\|'
+
+  - id: malicious-git-hooks-executable
+    message: Executable git hook detected - verify this is not malicious before running git commands
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+    languages: [bash, sh, python]
+    paths:
+      include:
+        - ".git/hooks/*"
+      exclude:
+        - ".git/hooks/*.sample"
+    patterns:
+      - pattern-either:
+          # Any shebang indicates executable script
+          - pattern-regex: '^#!/'
+
+          # Common hook file patterns (post-checkout is highest risk)
+          - pattern-regex: '.*'  # Match any content in non-.sample hook files

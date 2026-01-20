@@ -1,0 +1,44 @@
+rules:
+  - id: malicious-git-filter
+    message: Git filter configured in .gitattributes - may execute commands on checkout (requires matching git config)
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+      references:
+        - "https://git-scm.com/docs/gitattributes"
+        - "CVE-2022-23521"
+    languages: [generic]
+    paths:
+      include:
+        - ".gitattributes"
+    patterns:
+      - pattern-either:
+          # Filter attribute (requires git config to execute)
+          - pattern-regex: '.*\s+filter='
+
+          # Clean/smudge filters
+          - pattern-regex: '.*\s+clean='
+          - pattern-regex: '.*\s+smudge='
+
+          # Text conv filter
+          - pattern-regex: '.*\s+textconv='
+
+  - id: malicious-gitattributes-overflow
+    message: Extremely long .gitattributes line - potential CVE-2022-23521 exploit attempt
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-190: Integer Overflow or Wraparound"
+      owasp: "A04:2021 - Insecure Design"
+      confidence: HIGH
+      references:
+        - "CVE-2022-23521"
+    languages: [generic]
+    paths:
+      include:
+        - ".gitattributes"
+    patterns:
+      - pattern-regex: '^.{2000,}$'  # Lines over 2000 chars are suspicious

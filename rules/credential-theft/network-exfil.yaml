@@ -1,0 +1,75 @@
+rules:
+  - id: unauthorized-network-exfil
+    message: Suspicious network exfiltration detected - POST request with credential data
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # JavaScript fetch() with POST
+          - pattern: |
+              fetch($URL, { method: 'POST', ..., body: $DATA, ... })
+          - pattern: |
+              fetch($URL, { method: "POST", ..., body: $DATA, ... })
+
+          # JavaScript axios.post
+          - pattern: |
+              axios.post($URL, $DATA)
+          - pattern: |
+              axios.post($URL, $DATA, ...)
+
+          # JavaScript request library
+          - pattern: |
+              request.post($URL, ...)
+
+          # Python urllib.request with data (implies POST)
+          - pattern: |
+              urllib.request.urlopen($URL, data=$DATA)
+          - pattern: |
+              urllib.request.urlopen($REQ)
+
+          # Python urllib.request.Request with POST
+          - pattern: |
+              urllib.request.Request($URL, data=$DATA, ...)
+          - pattern: |
+              urllib.request.Request($URL, ..., method='POST', ...)
+          - pattern: |
+              urllib.request.Request($URL, ..., method="POST", ...)
+
+          # Python requests library POST
+          - pattern: |
+              requests.post($URL, ...)
+
+          # Base64 encoding before network transmission (obfuscation)
+          - pattern: |
+              $ENCODED = base64.b64encode($DATA)
+              ...
+              urllib.request.urlopen($URL, ...)
+          - pattern: |
+              $ENCODED = Buffer.from($DATA).toString('base64')
+              ...
+              fetch($URL, ...)
+
+      # Focus on suspicious URLs or data variable names
+      - metavariable-pattern:
+          metavariable: $URL
+          patterns:
+            - pattern-either:
+                # Suspicious domain patterns
+                - pattern: |
+                    "=~/not-a-real-url/"
+                - pattern: |
+                    "=~/evil/"
+                - pattern: |
+                    "=~/exfil/"
+                - pattern: |
+                    "=~/steal/"
+                - pattern: |
+                    "=~/malicious/"
+                # Any URL variable (catch-all for POST with any URL)
+                - pattern: $EXFIL_URL
+                - pattern: $STEAL_URL

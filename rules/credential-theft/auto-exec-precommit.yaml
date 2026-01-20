@@ -1,0 +1,83 @@
+rules:
+  - id: precommit-hooks-present
+    message: Pre-commit hooks configuration detected - hooks execute on git commit
+    severity: INFO
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: LOW
+      references:
+        - "https://pre-commit.com/"
+    languages: [yaml]
+    paths:
+      include:
+        - ".pre-commit-config.yaml"
+    patterns:
+      - pattern-regex: 'repos:'
+
+  - id: precommit-custom-repo
+    message: Pre-commit uses custom repository - verify repository trust before running
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: MEDIUM
+    languages: [yaml]
+    paths:
+      include:
+        - ".pre-commit-config.yaml"
+    patterns:
+      - pattern-either:
+          # Local hooks (can execute arbitrary code)
+          - pattern-regex: 'repo:\s+local'
+
+          # Git repos not from github.com/pre-commit
+          - pattern-regex: 'repo:.*(?!github\.com/pre-commit)'
+
+  - id: precommit-system-hook
+    message: Pre-commit uses system hook - executes local commands on git commit
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [yaml]
+    paths:
+      include:
+        - ".pre-commit-config.yaml"
+    patterns:
+      - pattern-regex: 'entry:.*system'
+
+  - id: lefthook-config-present
+    message: Lefthook git hooks manager detected - hooks execute on git operations
+    severity: INFO
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: LOW
+    languages: [yaml]
+    paths:
+      include:
+        - "lefthook.yml"
+        - ".lefthook.yml"
+    patterns:
+      - pattern-regex: '(pre-commit|pre-push|post-checkout):'
+
+  - id: husky-hooks-present
+    message: Husky git hooks detected - Node.js scripts execute on git operations
+    severity: INFO
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: LOW
+    languages: [json]
+    paths:
+      include:
+        - "package.json"
+    patterns:
+      - pattern-regex: '"husky":\s*\{'

@@ -1,0 +1,59 @@
+rules:
+  - id: steal-ssh-keys-js
+    message: Reading SSH private keys - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # JavaScript/TypeScript - path.join constructing .ssh paths
+          - pattern: path.join(..., ".ssh", "id_rsa")
+          - pattern: path.join(..., ".ssh", "id_dsa")
+          - pattern: path.join(..., ".ssh", "id_ecdsa")
+          - pattern: path.join(..., ".ssh", "id_ed25519")
+          - pattern: path.join(os.homedir(), ".ssh", ...)
+          - pattern: path.join(..., ".ssh")
+          - pattern: path.join(..., ".ssh", "known_hosts")
+          - pattern: path.join(..., ".ssh", "config")
+          - pattern: path.join(..., ".ssh", "authorized_keys")
+
+          # Direct file reads
+          - pattern: fs.readFileSync(..., ".ssh/id_rsa", ...)
+          - pattern: fs.readFileSync(..., ".ssh/id_dsa", ...)
+          - pattern: fs.readFileSync(..., ".ssh/id_ecdsa", ...)
+          - pattern: fs.readFileSync(..., ".ssh/id_ed25519", ...)
+
+  - id: steal-ssh-keys-python
+    message: Reading SSH private keys - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Python - open() with expanduser for SSH keys
+          - pattern: open(os.path.expanduser("~/.ssh/id_rsa"))
+          - pattern: open(os.path.expanduser("~/.ssh/id_dsa"))
+          - pattern: open(os.path.expanduser("~/.ssh/id_ecdsa"))
+          - pattern: open(os.path.expanduser("~/.ssh/id_ed25519"))
+
+          # Python - with open()
+          - pattern: |
+              with open(os.path.expanduser("~/.ssh/id_rsa")) as $F:
+                  ...
+          - pattern: |
+              with open(os.path.expanduser("~/.ssh/id_dsa")) as $F:
+                  ...
+          - pattern: |
+              with open(os.path.expanduser("~/.ssh/id_ecdsa")) as $F:
+                  ...
+          - pattern: |
+              with open(os.path.expanduser("~/.ssh/id_ed25519")) as $F:
+                  ...

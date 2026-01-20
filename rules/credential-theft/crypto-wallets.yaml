@@ -1,0 +1,95 @@
+rules:
+  - id: steal-crypto-wallets-js
+    message: Accessing cryptocurrency wallets - potential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A04:2021 - Insecure Design"
+      confidence: HIGH
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Bitcoin Core wallet.dat - JavaScript/TypeScript strings
+          - pattern: |
+              "...$X....bitcoin/wallet.dat$Y..."
+          - pattern: |
+              "...$X....bitcoin/wallets$Y..."
+
+          # Ethereum keystore - JavaScript/TypeScript strings
+          - pattern: |
+              "...$X....ethereum/keystore$Y..."
+
+          # Metamask browser extension ID
+          - pattern: |
+              "...nkbihfbeogaeaoehlefnkodbefgpgknn..."
+
+          # Metamask - JavaScript/TypeScript
+          - pattern: |
+              "...$X...Local Extension Settings/nkbihfbeogaeaoehlefnkodbefgpgknn$Y..."
+
+          # Exodus wallet - JavaScript/TypeScript
+          - pattern: |
+              "...$X...Exodus$Y..."
+
+          # Exodus seed file
+          - pattern: |
+              "...$X...seed.seco$Y..."
+
+          # Electrum wallets - JavaScript/TypeScript
+          - pattern: |
+              "...$X....electrum/wallets$Y..."
+
+          # Generic wallet search patterns
+          - pattern: |
+              "...$X...wallet.dat$Y..."
+          - pattern: |
+              "...$X...keystore$Y..."
+
+  - id: steal-crypto-wallets-python
+    message: Accessing cryptocurrency wallets - potential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A04:2021 - Insecure Design"
+      confidence: HIGH
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Bitcoin Core wallet.dat - Python Path
+          - pattern: |
+              Path(...) / ".bitcoin" / "wallet.dat"
+          - pattern: |
+              Path(...) / ".bitcoin" / "wallets"
+          - pattern: |
+              Path.home() / ".bitcoin" / "wallet.dat"
+
+          # Bitcoin Core wallet.dat - Python open()
+          - pattern: open(..., ".bitcoin/wallet.dat", ...)
+
+          # Ethereum keystore - Python Path
+          - pattern: |
+              Path(...) / ".ethereum" / "keystore"
+          - pattern: |
+              Path.home() / ".ethereum" / "keystore"
+
+          # Metamask - Python Path
+          - pattern: |
+              Path(...) / "..." / "Local Extension Settings" / "nkbihfbeogaeaoehlefnkodbefgpgknn"
+
+          # Exodus wallet - Python Path
+          - pattern: |
+              Path(...) / "..." / "Exodus"
+          - pattern: |
+              Path.home() / "..." / "Exodus"
+
+          # Exodus seed file
+          - pattern: |
+              Path(...) / "..." / "seed.seco"
+
+          # Electrum wallets - Python Path
+          - pattern: |
+              Path(...) / ".electrum" / "wallets"
+          - pattern: |
+              Path.home() / ".electrum" / "wallets"

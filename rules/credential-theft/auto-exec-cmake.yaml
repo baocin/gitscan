@@ -1,0 +1,84 @@
+rules:
+  - id: cmake-execute-process-network
+    message: CMakeLists.txt downloads from network during cmake configuration
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+    languages: [generic]
+    paths:
+      include:
+        - "CMakeLists.txt"
+        - "*/CMakeLists.txt"
+        - "*.cmake"
+    patterns:
+      - pattern-either:
+          # execute_process with curl/wget
+          - pattern-regex: 'execute_process\([^)]*COMMAND\s+(curl|wget)'
+          - pattern-regex: 'execute_process\([^)]*bash.*curl'
+
+          # file(DOWNLOAD)
+          - pattern-regex: 'file\(\s*DOWNLOAD\s+'
+
+  - id: cmake-execute-process-credentials
+    message: CMakeLists.txt accesses credential files during configuration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+    languages: [generic]
+    paths:
+      include:
+        - "CMakeLists.txt"
+        - "*.cmake"
+    patterns:
+      - pattern-either:
+          # Reading credential files
+          - pattern-regex: 'file\(\s*READ\s+.*\.aws/credentials'
+          - pattern-regex: 'file\(\s*READ\s+.*\.ssh/id_rsa'
+          - pattern-regex: 'execute_process\([^)]*COMMAND\s+cat.*\.aws'
+          - pattern-regex: 'execute_process\([^)]*COMMAND\s+cat.*\.ssh'
+
+  - id: cmake-execute-process-shell
+    message: CMakeLists.txt executes arbitrary shell commands during cmake
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [generic]
+    paths:
+      include:
+        - "CMakeLists.txt"
+        - "*.cmake"
+    patterns:
+      - pattern-either:
+          # execute_process with shell
+          - pattern-regex: 'execute_process\([^)]*COMMAND\s+(bash|sh)\s+'
+
+          # execute_process with eval-like patterns
+          - pattern-regex: 'execute_process\([^)]*eval'
+
+  - id: cmake-add-custom-command-network
+    message: CMake custom command downloads or executes code from network
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+    languages: [generic]
+    paths:
+      include:
+        - "CMakeLists.txt"
+        - "*.cmake"
+    patterns:
+      - pattern-either:
+          # add_custom_command with network access
+          - pattern-regex: 'add_custom_command\([^)]{1,500}?COMMAND\s+(curl|wget)'
+          - pattern-regex: 'add_custom_target\([^)]{1,500}?COMMAND\s+(curl|wget)'

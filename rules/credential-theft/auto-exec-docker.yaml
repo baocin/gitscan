@@ -1,0 +1,130 @@
+rules:
+  - id: dockerfile-onbuild-add
+    message: Dockerfile uses ONBUILD ADD - automatically executes in child images
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: MEDIUM
+      references:
+        - "https://docs.docker.com/reference/dockerfile/#onbuild"
+    languages: [docker]
+    paths:
+      include:
+        - "Dockerfile"
+        - "*.dockerfile"
+        - "docker/Dockerfile"
+    patterns:
+      - pattern-either:
+          # ONBUILD with ADD
+          - pattern-regex: '^ONBUILD\s+ADD'
+
+          # ONBUILD with COPY
+          - pattern-regex: '^ONBUILD\s+COPY'
+
+  - id: dockerfile-onbuild-run
+    message: Dockerfile uses ONBUILD RUN - executes commands automatically in child images
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+    languages: [docker]
+    paths:
+      include:
+        - "Dockerfile"
+        - "*.dockerfile"
+    patterns:
+      - pattern-either:
+          # ONBUILD RUN with network access
+          - pattern-regex: '^ONBUILD\s+RUN.*curl'
+          - pattern-regex: '^ONBUILD\s+RUN.*wget'
+
+          # ONBUILD RUN with shell
+          - pattern-regex: '^ONBUILD\s+RUN'
+
+  - id: dockerfile-add-url
+    message: Dockerfile ADD fetches from URL - prefer COPY with explicit download
+    severity: INFO
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: LOW
+    languages: [docker]
+    paths:
+      include:
+        - "Dockerfile"
+        - "*.dockerfile"
+    patterns:
+      - pattern-regex: '^ADD\s+https?://'
+
+  - id: dockerfile-run-curl-pipe
+    message: Dockerfile RUN pipes curl/wget to shell - dangerous pattern
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+    languages: [docker]
+    paths:
+      include:
+        - "Dockerfile"
+        - "*.dockerfile"
+    patterns:
+      - pattern-either:
+          # curl | bash
+          - pattern-regex: 'RUN.*curl.*\|.*bash'
+          - pattern-regex: 'RUN.*curl.*\|.*sh'
+
+          # wget | bash
+          - pattern-regex: 'RUN.*wget.*\|.*bash'
+          - pattern-regex: 'RUN.*wget.*-O.*-.*\|'
+
+  - id: docker-compose-build-url
+    message: docker-compose.yml builds from network URL - verify source trust
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: MEDIUM
+    languages: [yaml]
+    paths:
+      include:
+        - "docker-compose.yml"
+        - "docker-compose.yaml"
+        - "compose.yml"
+        - "compose.yaml"
+    patterns:
+      - pattern-regex: 'build:\s+https?://'
+
+  - id: docker-compose-volume-sensitive
+    message: docker-compose.yml mounts sensitive host paths - review security implications
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: MEDIUM
+    languages: [yaml]
+    paths:
+      include:
+        - "docker-compose.yml"
+        - "docker-compose.yaml"
+    patterns:
+      - pattern-either:
+          # SSH keys
+          - pattern-regex: 'volumes:.*\.ssh.*:'
+
+          # AWS credentials
+          - pattern-regex: 'volumes:.*\.aws.*:'
+
+          # Docker socket
+          - pattern-regex: 'volumes:.*docker\.sock.*:'
+
+          # Root filesystem
+          - pattern-regex: 'volumes:.*:/.*:'

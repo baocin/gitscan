@@ -1,0 +1,77 @@
+rules:
+  - id: steal-env-files-js
+    message: Scanning for .env files - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # JavaScript - reading .env files
+          - pattern: fs.readFileSync(..., ".env", ...)
+          - pattern: fs.readFile(..., ".env", ...)
+          - pattern: fs.readFileSync("=~/.env/")
+          - pattern: fs.readFile("=~/.env/")
+
+          # JavaScript - searching directories for .env files
+          - pattern: |
+              $FILES = fs.readdirSync($DIR)
+              ...
+              $FILES.forEach($FILE => {
+                  ...
+                  if ($FILE.startsWith('.env')) {
+                      ...
+                  }
+              })
+
+          # JavaScript - glob patterns for .env
+          - pattern: |
+              $FILE.startsWith('.env')
+
+          # Reading specific .env variants
+          - pattern: fs.readFileSync(".env.local")
+          - pattern: fs.readFileSync(".env.production")
+          - pattern: fs.readFileSync(".env.development")
+
+  - id: steal-env-files-python
+    message: Scanning for .env files - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Python - opening .env files
+          - pattern: open("=~/.env/")
+          - pattern: |
+              with open("=~/.env/") as $F:
+                  ...
+
+          # Python - os.walk searching for .env
+          - pattern: |
+              for $ROOT, $DIRS, $FILES in os.walk(...):
+                  ...
+                  for $FILE in $FILES:
+                      ...
+                      if $FILE.startswith(".env"):
+                          ...
+
+          # Python - glob for .env files
+          - pattern: glob.glob(".../.env*")
+          - pattern: Path(...).glob(".env*")
+          - pattern: Path(...).glob("**/.env*")
+          - pattern: Path(...).rglob(".env*")
+
+          # Python - list comprehension finding .env
+          - pattern: |
+              [$F for $F in $FILES if $F.startswith(".env")]
+
+          # Reading specific .env variants
+          - pattern: open(".env.local")
+          - pattern: open(".env.production")

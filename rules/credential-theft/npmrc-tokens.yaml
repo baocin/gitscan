@@ -1,0 +1,56 @@
+rules:
+  - id: steal-npmrc-token-js
+    message: Reading npm authentication tokens from .npmrc - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # JavaScript/TypeScript - path.join constructing .npmrc paths
+          - pattern: path.join(os.homedir(), ".npmrc")
+          - pattern: path.join(..., ".npmrc")
+
+          # Direct file reads
+          - pattern: fs.readFileSync(..., ".npmrc", ...)
+          - pattern: fs.readFile(..., ".npmrc", ...)
+          - pattern: fs.readFileSync("~/.npmrc")
+          - pattern: fs.readFileSync(".npmrc")
+          - pattern: fs.readFileSync(".npmrc", ...)
+
+          # Searching for authToken in file content
+          - pattern: |
+              $CONTENT.match(/authToken=(.*)/)
+
+  - id: steal-npmrc-token-python
+    message: Reading npm authentication tokens from .npmrc - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Python - open .npmrc with expanduser
+          - pattern: open(os.path.expanduser("~/.npmrc"))
+          - pattern: |
+              with open(os.path.expanduser("~/.npmrc")) as $F:
+                  ...
+
+          # Python - Path operations
+          - pattern: |
+              Path.home() / ".npmrc"
+          - pattern: |
+              Path(...) / ".npmrc"
+
+          # Reading .npmrc from current directory
+          - pattern: open(".npmrc")
+
+          # Searching for authToken in file content
+          - pattern: |
+              re.search(r"authToken=(.*)", $CONTENT)

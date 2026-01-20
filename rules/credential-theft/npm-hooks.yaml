@@ -1,0 +1,54 @@
+rules:
+  - id: malicious-npm-postinstall-hook
+    message: Suspicious npm postinstall/preinstall script detected - potential supply chain attack
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: HIGH
+      references:
+        - "https://blog.npmjs.org/post/141702881055/package-install-scripts-vulnerability"
+        - "https://snyk.io/blog/ten-npm-security-best-practices/"
+    languages: [json]
+    paths:
+      include:
+        - "package.json"
+    pattern-either:
+      # Preinstall hooks - rarely legitimate, high suspicion
+      - pattern: |
+          { ..., "scripts": { ..., "preinstall": $CMD, ... }, ... }
+
+      # Postinstall with shell command chaining (&&, ||, ;)
+      - pattern: |
+          { ..., "scripts": { ..., "postinstall": "=~/&&/", ... }, ... }
+      - pattern: |
+          { ..., "scripts": { ..., "postinstall": "=~/\|\|/", ... }, ... }
+
+      # Postinstall running shell scripts
+      - pattern: |
+          { ..., "scripts": { ..., "postinstall": "=~/sh /", ... }, ... }
+      - pattern: |
+          { ..., "scripts": { ..., "postinstall": "=~/bash /", ... }, ... }
+      - pattern: |
+          { ..., "scripts": { ..., "postinstall": "=~/\.sh/", ... }, ... }
+
+      # Postinstall with curl/wget (download and execute)
+      - pattern: |
+          { ..., "scripts": { ..., "postinstall": "=~/curl/", ... }, ... }
+      - pattern: |
+          { ..., "scripts": { ..., "postinstall": "=~/wget/", ... }, ... }
+
+      # Postinstall with python execution
+      - pattern: |
+          { ..., "scripts": { ..., "postinstall": "=~/python/", ... }, ... }
+
+      # Postinstall with credential/steal keywords
+      - pattern: |
+          { ..., "scripts": { ..., "postinstall": "=~/steal/", ... }, ... }
+      - pattern: |
+          { ..., "scripts": { ..., "postinstall": "=~/credential/", ... }, ... }
+      - pattern: |
+          { ..., "scripts": { ..., "postinstall": "=~/\.aws/", ... }, ... }
+      - pattern: |
+          { ..., "scripts": { ..., "postinstall": "=~/\.ssh/", ... }, ... }

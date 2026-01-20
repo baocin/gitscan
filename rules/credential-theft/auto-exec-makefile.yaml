@@ -1,0 +1,95 @@
+rules:
+  - id: malicious-makefile-network-exec
+    message: Makefile contains network download + execution pattern - dangerous if run after clone
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+    languages: [generic]
+    paths:
+      include:
+        - "Makefile"
+        - "makefile"
+        - "GNUmakefile"
+        - "*.mk"
+    patterns:
+      - pattern-either:
+          # Curl piped to shell
+          - pattern-regex: 'curl.*\|.*sh'
+          - pattern-regex: 'curl.*\|.*bash'
+
+          # Wget piped to shell
+          - pattern-regex: 'wget.*\|.*sh'
+          - pattern-regex: 'wget.*\|.*bash'
+          - pattern-regex: 'wget.*-O.*-.*\|'
+
+          # Download and execute pattern
+          - pattern-regex: 'curl.*&&.*chmod.*\+x'
+          - pattern-regex: 'wget.*&&.*chmod.*\+x'
+          - pattern-regex: 'curl.*&&.*\./'
+          - pattern-regex: 'wget.*&&.*\./'
+
+          # Eval with network download
+          - pattern-regex: 'eval.*\$\(curl'
+          - pattern-regex: 'eval.*\$\(wget'
+
+  - id: malicious-makefile-credential-access
+    message: Makefile accesses credential files - verify legitimacy before running make
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: LOW
+    languages: [generic]
+    paths:
+      include:
+        - "Makefile"
+        - "makefile"
+        - "GNUmakefile"
+    patterns:
+      - pattern-either:
+          # AWS credentials
+          - pattern-regex: '\.aws/credentials'
+          - pattern-regex: '\$\(HOME\)/\.aws'
+
+          # SSH keys
+          - pattern-regex: '\.ssh/id_rsa'
+          - pattern-regex: '\.ssh/id_dsa'
+          - pattern-regex: '\.ssh/id_ecdsa'
+          - pattern-regex: '\$\(HOME\)/\.ssh'
+
+          # Environment dumping
+          - pattern-regex: '\$\(env\)'
+          - pattern-regex: 'printenv'
+
+          # .env files
+          - pattern-regex: 'source.*\.env'
+          - pattern-regex: '\. .*\.env'
+
+  - id: suspicious-makefile-default-target
+    message: Makefile default target contains suspicious commands - review before running make
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [generic]
+    paths:
+      include:
+        - "Makefile"
+        - "makefile"
+        - "GNUmakefile"
+    patterns:
+      - pattern-either:
+          # Suspicious in 'all' target (default)
+          - pattern-regex: '^all:.*curl'
+          - pattern-regex: '^all:.*wget'
+          - pattern-regex: '^all:.*chmod \+x'
+
+          # Default target with network access
+          - pattern-regex: '^\.DEFAULT_GOAL.*curl'
+          - pattern-regex: '^\.DEFAULT_GOAL.*wget'

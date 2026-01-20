@@ -97,7 +97,7 @@ const sampleSARIF = `{
 }`
 
 func TestParseSARIFOutput(t *testing.T) {
-	result, err := parseSARIFOutput(sampleSARIF, "", 100, time.Now())
+	result, err := parseSARIFOutput(sampleSARIF, "", 100, time.Now(), false)
 	if err != nil {
 		t.Fatalf("Failed to parse SARIF output: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestParseSARIFOutput(t *testing.T) {
 }
 
 func TestParseSARIFOutputEmpty(t *testing.T) {
-	result, err := parseSARIFOutput("", "", 50, time.Now())
+	result, err := parseSARIFOutput("", "", 50, time.Now(), false)
 	if err != nil {
 		t.Fatalf("Failed to parse empty SARIF: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestParseSARIFOutputNoResults(t *testing.T) {
 		"runs": [{"tool": {"driver": {"name": "opengrep"}}, "results": []}]
 	}`
 
-	result, err := parseSARIFOutput(noResultsSARIF, "", 25, time.Now())
+	result, err := parseSARIFOutput(noResultsSARIF, "", 25, time.Now(), false)
 	if err != nil {
 		t.Fatalf("Failed to parse SARIF with no results: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestNormalizeSeverity(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		result := normalizeSeverity(tc.input)
+		result := normalizeSeverity(tc.input, "test-rule")
 		if result != tc.expected {
 			t.Errorf("normalizeSeverity(%q) = %q, expected %q", tc.input, result, tc.expected)
 		}
@@ -232,7 +232,7 @@ func TestNormalizeSeverity(t *testing.T) {
 func TestFindingsJSONCanBeUnmarshaledAsArray(t *testing.T) {
 	// This test verifies the fix for the bug where SARIF was stored directly
 	// but handlers expected []Finding format
-	result, err := parseSARIFOutput(sampleSARIF, "", 100, time.Now())
+	result, err := parseSARIFOutput(sampleSARIF, "", 100, time.Now(), false)
 	if err != nil {
 		t.Fatalf("Failed to parse SARIF: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestFindingsJSONCanBeUnmarshaledAsArray(t *testing.T) {
 	}
 }
 
-func TestCalculateSecurityScore(t *testing.T) {
+func TestCalculateRunRisk(t *testing.T) {
 	tests := []struct {
 		infoLeak, critical, high, medium, low int
 		expectedScore                         int
@@ -284,15 +284,15 @@ func TestCalculateSecurityScore(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		score := CalculateSecurityScore(tc.infoLeak, tc.critical, tc.high, tc.medium, tc.low)
+		score := CalculateRunRisk(tc.infoLeak, tc.critical, tc.high, tc.medium, tc.low)
 		if score != tc.expectedScore {
-			t.Errorf("CalculateSecurityScore(%d, %d, %d, %d, %d) = %d, expected %d",
+			t.Errorf("CalculateRunRisk(%d, %d, %d, %d, %d) = %d, expected %d",
 				tc.infoLeak, tc.critical, tc.high, tc.medium, tc.low, score, tc.expectedScore)
 		}
 	}
 }
 
-func TestScoreGrade(t *testing.T) {
+func TestRiskGrade(t *testing.T) {
 	tests := []struct {
 		score         int
 		expectedGrade string
@@ -312,23 +312,23 @@ func TestScoreGrade(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		grade := ScoreGrade(tc.score)
+		grade := RiskGrade(tc.score)
 		if grade != tc.expectedGrade {
-			t.Errorf("ScoreGrade(%d) = %q, expected %q", tc.score, grade, tc.expectedGrade)
+			t.Errorf("RiskGrade(%d) = %q, expected %q", tc.score, grade, tc.expectedGrade)
 		}
 	}
 }
 
 func TestSecurityScoreInParsedResult(t *testing.T) {
 	// Verify security score is calculated during SARIF parsing
-	result, err := parseSARIFOutput(sampleSARIF, "", 100, time.Now())
+	result, err := parseSARIFOutput(sampleSARIF, "", 100, time.Now(), false)
 	if err != nil {
 		t.Fatalf("Failed to parse SARIF: %v", err)
 	}
 
 	// Sample SARIF has: 1 critical (error), 1 high (warning)
 	// Expected: 100 - 25 - 15 = 60
-	expectedScore := CalculateSecurityScore(result.InfoLeakCount, result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount)
+	expectedScore := CalculateRunRisk(result.InfoLeakCount, result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount)
 	if result.SecurityScore != expectedScore {
 		t.Errorf("SecurityScore = %d, expected %d", result.SecurityScore, expectedScore)
 	}

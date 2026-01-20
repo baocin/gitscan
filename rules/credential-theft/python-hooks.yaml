@@ -1,0 +1,120 @@
+rules:
+  - id: malicious-setup-py-hook
+    message: Suspicious setup.py install hook detected - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: HIGH
+      references:
+        - "https://blog.reversinglabs.com/blog/suppy-chain-malware-detecting-malicious-python-packages"
+    languages: [python]
+    paths:
+      include:
+        - "setup.py"
+    patterns:
+      - pattern-either:
+          # PostInstall/PostDevelop class calling suspicious functions
+          - pattern: |
+              class $CLASS(install):
+                  def run(self):
+                      ...
+                      $FUNC(...)
+                      ...
+          - pattern: |
+              class $CLASS(develop):
+                  def run(self):
+                      ...
+                      $FUNC(...)
+                      ...
+
+          # PostInstall/PostDevelop class accessing AWS credentials
+          - pattern: |
+              class $CLASS(install):
+                  def run(self):
+                      ...
+                      open(os.path.expanduser("~/.aws/credentials"))
+                      ...
+
+          - pattern: |
+              class $CLASS(develop):
+                  def run(self):
+                      ...
+                      open(os.path.expanduser("~/.aws/credentials"))
+                      ...
+
+          # PostInstall/PostDevelop class accessing SSH keys
+          - pattern: |
+              class $CLASS(install):
+                  def run(self):
+                      ...
+                      open(os.path.expanduser("~/.ssh/id_rsa"))
+                      ...
+
+          - pattern: |
+              class $CLASS(develop):
+                  def run(self):
+                      ...
+                      open(os.path.expanduser("~/.ssh/id_rsa"))
+                      ...
+
+          # PostInstall/PostDevelop with subprocess/os.system network calls
+          - pattern: |
+              class $CLASS(install):
+                  def run(self):
+                      ...
+                      subprocess.run(['curl', ...])
+                      ...
+
+          - pattern: |
+              class $CLASS(install):
+                  def run(self):
+                      ...
+                      os.system('curl ...')
+                      ...
+
+          - pattern: |
+              class $CLASS(develop):
+                  def run(self):
+                      ...
+                      subprocess.run(['curl', ...])
+                      ...
+
+          # Direct credential reads in setup.py (outside classes)
+          - pattern: |
+              open(os.path.expanduser("~/.aws/credentials"))
+
+          - pattern: |
+              open(os.path.expanduser("~/.ssh/id_rsa"))
+
+          # Subprocess curl/wget in setup.py
+          - pattern: |
+              subprocess.run(['curl', ...])
+
+          - pattern: |
+              subprocess.run(['wget', ...])
+
+          - pattern: |
+              os.system('curl ...')
+
+          - pattern: |
+              os.system('wget ...')
+
+          # URL requests in setup.py (potentially malicious)
+          - pattern: |
+              urllib.request.urlopen($URL, data=...)
+
+      # Filter out install.run(self) to avoid false positives on parent class calls
+      - pattern-not: |
+          class $CLASS(install):
+              def run(self):
+                  ...
+                  install.run(self)
+                  ...
+      - pattern-not: |
+          class $CLASS(develop):
+              def run(self):
+                  ...
+                  develop.run(self)
+                  ...

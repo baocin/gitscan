@@ -173,6 +173,7 @@ type Finding struct {
 	Category    string   `json:"category"`
 	Confidence  string   `json:"confidence"`
 	References  []string `json:"references"`
+	IsInfoLeak  bool     `json:"is_info_leak"` // True if this is credential theft/auto-exec detection
 }
 
 // SARIFOutput represents the SARIF output format from opengrep
@@ -564,9 +565,10 @@ func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime
 			}
 
 			finding := Finding{
-				RuleID:   r.RuleID,
-				Severity: normalizeSeverity(severity, r.RuleID),
-				Message:  r.Message.Text,
+				RuleID:     r.RuleID,
+				Severity:   normalizeSeverity(severity, r.RuleID),
+				Message:    r.Message.Text,
+				IsInfoLeak: classifyAsInfoLeak(r.RuleID),
 			}
 
 			if len(r.Locations) > 0 {
@@ -584,8 +586,6 @@ func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime
 
 			// Count by severity
 			switch finding.Severity {
-			case "info-leak":
-				result.InfoLeakCount++
 			case "critical":
 				result.CriticalCount++
 			case "high":
@@ -597,6 +597,11 @@ func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime
 			default:
 				result.InfoCount++
 			}
+
+			// Track info-leak findings separately
+			if finding.IsInfoLeak {
+				result.InfoLeakCount++
+			}
 		}
 	}
 
@@ -604,19 +609,37 @@ func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime
 	if infoLeakOnly {
 		filteredFindings := []Finding{}
 		for _, finding := range result.Findings {
-			if finding.Severity == "info-leak" {
+			if finding.IsInfoLeak {
 				filteredFindings = append(filteredFindings, finding)
 			}
 		}
 		result.Findings = filteredFindings
 
-		// Recalculate counts (zero out non-info-leak categories)
+		// Recalculate severity counts for info-leak findings only
 		result.CriticalCount = 0
 		result.HighCount = 0
 		result.MediumCount = 0
 		result.LowCount = 0
 		result.InfoCount = 0
-		// InfoLeakCount stays as-is from the loop above
+		result.InfoLeakCount = 0
+
+		for _, finding := range result.Findings {
+			switch finding.Severity {
+			case "critical":
+				result.CriticalCount++
+			case "high":
+				result.HighCount++
+			case "medium":
+				result.MediumCount++
+			case "low":
+				result.LowCount++
+			default:
+				result.InfoCount++
+			}
+			if finding.IsInfoLeak {
+				result.InfoLeakCount++
+			}
+		}
 	}
 
 	// Serialize findings to JSON for storage (not raw SARIF)
@@ -682,6 +705,38 @@ func classifyAsInfoLeak(ruleID string) bool {
 		// File system access to private data
 		"reads-private-key", "steal-file", "unauthorized-read",
 		"reads-home", "access-private", "file-theft",
+
+		// Package manager install hooks (supply chain attacks)
+		"install-hook", "postinstall", "preinstall", "setup-py",
+		"malicious-npm", "malicious-setup", "npm-hook", "python-hook",
+
+		// NPM/PyPI credential theft
+		"npmrc", "npm-token", "pypi-token", "env-file",
+
+		// Auto-execution mechanisms (git hooks, makefiles, etc.)
+		"auto-exec", "git-hook", "malicious-git", "git-submodule",
+		"malicious-makefile", "makefile-network", "makefile-credential",
+		"dangerous-readme", "install-script", "build-script",
+		"git-filter", "gitattributes",
+
+		// Multi-language build system auto-execution
+		"rust-build", "build-rs", "cargo-build",
+		"maven-exec", "pom-xml", "ant-run",
+		"gradle-exec", "gradle-init", "gradle-task",
+		"cmake-execute", "cmake-download", "cmakelists",
+		"dockerfile-onbuild", "docker-compose", "docker-add",
+
+		// Additional language ecosystems
+		"composer-scripts", "composer-post", "php-composer",
+		"gemspec", "rakefile", "bundler",
+		"msbuild", "nuget", "csproj", "dotnet-build",
+
+		// CI/CD auto-execution
+		"github-actions", "gitlab-ci", "travis-ci", "circle-ci",
+		"workflow", "pipeline",
+
+		// Git hook managers
+		"precommit", "pre-commit", "lefthook", "husky",
 	}
 
 	for _, pattern := range leakPatterns {
@@ -693,13 +748,9 @@ func classifyAsInfoLeak(ruleID string) bool {
 	return false
 }
 
-// normalizeSeverity normalizes severity strings and promotes info leaks
+// normalizeSeverity normalizes severity strings to standard levels
 func normalizeSeverity(s string, ruleID string) string {
-	// Check if this is an information leak - highest priority
-	if classifyAsInfoLeak(ruleID) {
-		return "info-leak"
-	}
-
+	// Normalize severity string (don't override for info-leak)
 	s = strings.ToLower(s)
 	switch s {
 	case "error", "critical":

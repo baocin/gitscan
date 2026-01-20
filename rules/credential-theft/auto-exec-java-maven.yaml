@@ -1,0 +1,89 @@
+rules:
+  - id: maven-exec-plugin-shell
+    message: Maven pom.xml uses exec-maven-plugin with shell execution - runs on mvn compile/install
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+    languages: [xml]
+    paths:
+      include:
+        - "pom.xml"
+        - "*/pom.xml"
+    patterns:
+      - pattern-either:
+          # exec-maven-plugin with executable
+          - pattern-regex: '<artifactId>exec-maven-plugin</artifactId>[\s\S]*?<executable>(bash|sh|curl|wget)</executable>'
+
+          # exec-maven-plugin with arguments containing suspicious commands
+          - pattern-regex: '<artifactId>exec-maven-plugin</artifactId>[\s\S]{1,500}?<argument>.*\|.*bash'
+          - pattern-regex: '<artifactId>exec-maven-plugin</artifactId>[\s\S]{1,500}?<argument>.*curl.*\|'
+
+  - id: maven-custom-plugin-untrusted
+    message: Maven pom.xml includes custom plugin from non-Maven-Central repository - verify trust
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: MEDIUM
+    languages: [xml]
+    paths:
+      include:
+        - "pom.xml"
+    patterns:
+      - pattern-regex: '<pluginRepositories>[\s\S]*?<url>(?!https://repo\.maven\.apache\.org)'
+
+  - id: maven-antrun-plugin-exec
+    message: Maven uses ant-run plugin to execute shell commands - runs during build
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+    languages: [xml]
+    paths:
+      include:
+        - "pom.xml"
+    patterns:
+      - pattern-either:
+          # Ant exec task
+          - pattern-regex: '<artifactId>maven-antrun-plugin</artifactId>[\s\S]{1,1000}?<exec '
+          - pattern-regex: '<artifactId>maven-antrun-plugin</artifactId>[\s\S]{1,1000}?executable="(curl|wget|bash|sh)"'
+
+  - id: maven-groovy-plugin-script
+    message: Maven uses GMavenPlus plugin to execute Groovy scripts - arbitrary code execution
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-94: Improper Control of Generation of Code"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [xml]
+    paths:
+      include:
+        - "pom.xml"
+    patterns:
+      - pattern-regex: '<artifactId>gmavenplus-plugin</artifactId>'
+
+  - id: maven-credentials-in-pom
+    message: Maven pom.xml may contain hardcoded credentials in properties or configuration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      owasp: "A07:2021 - Identification and Authentication Failures"
+      confidence: LOW
+    languages: [xml]
+    paths:
+      include:
+        - "pom.xml"
+    patterns:
+      - pattern-either:
+          # Suspicious property names
+          - pattern-regex: '<(password|secret|apiKey|token)>(?!\\$\{)[^<]{8,}</\1>'
+          - pattern-regex: '<aws\.accessKey'
+          - pattern-regex: '<aws\.secretKey'

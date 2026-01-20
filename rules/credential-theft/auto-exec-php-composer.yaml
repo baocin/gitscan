@@ -1,0 +1,51 @@
+rules:
+  - id: composer-scripts-shell-exec
+    message: composer.json scripts execute shell commands - runs on composer install/update
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+      references:
+        - "https://getcomposer.org/doc/articles/scripts.md"
+    languages: [json]
+    paths:
+      include:
+        - "composer.json"
+    patterns:
+      - pattern-either:
+          # Scripts with suspicious commands
+          - pattern-regex: '"(pre-install-cmd|post-install-cmd|pre-update-cmd|post-update-cmd)":\s*"[^"]*curl'
+          - pattern-regex: '"(pre-install-cmd|post-install-cmd)":\s*"[^"]*wget'
+          - pattern-regex: '"scripts":[^}]{1,500}?"post-install-cmd":\s*\['
+
+  - id: composer-custom-repository
+    message: composer.json uses custom package repository - verify repository trust
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: MEDIUM
+    languages: [json]
+    paths:
+      include:
+        - "composer.json"
+    patterns:
+      - pattern-regex: '"repositories":[^]]{1,500}?"type":\s*"(vcs|package|path)"'
+
+  - id: composer-post-autoload-dump
+    message: composer.json post-autoload-dump script - executes after composer dump-autoload
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-94: Improper Control of Generation of Code"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [json]
+    paths:
+      include:
+        - "composer.json"
+    patterns:
+      - pattern-regex: '"post-autoload-dump":'

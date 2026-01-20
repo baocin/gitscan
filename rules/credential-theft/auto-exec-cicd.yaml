@@ -1,0 +1,107 @@
+rules:
+  - id: github-actions-curl-pipe
+    message: GitHub Actions workflow downloads and executes code - runs on git push
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+      references:
+        - "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions"
+    languages: [yaml]
+    paths:
+      include:
+        - ".github/workflows/*.yml"
+        - ".github/workflows/*.yaml"
+    patterns:
+      - pattern-either:
+          # Curl piped to bash
+          - pattern-regex: 'run:.*curl.*\|.*bash'
+          - pattern-regex: 'run:.*wget.*\|.*sh'
+
+          # Eval with network content
+          - pattern-regex: 'run:.*eval.*curl'
+
+  - id: github-actions-third-party-action
+    message: GitHub Actions uses third-party action without version pin - potential supply chain risk
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: LOW
+    languages: [yaml]
+    paths:
+      include:
+        - ".github/workflows/*.yml"
+        - ".github/workflows/*.yaml"
+    patterns:
+      - pattern-regex: 'uses:\s+[^/]+/[^@\n]+@(main|master|latest|develop)'
+
+  - id: github-actions-secrets-in-logs
+    message: GitHub Actions may print secrets to logs - review output handling
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-532: Insertion of Sensitive Information into Log File"
+      owasp: "A09:2021 - Security Logging and Monitoring Failures"
+      confidence: MEDIUM
+    languages: [yaml]
+    paths:
+      include:
+        - ".github/workflows/*.yml"
+        - ".github/workflows/*.yaml"
+    patterns:
+      - pattern-regex: 'run:.*echo.*\$\{\{\s*secrets\.'
+
+  - id: gitlab-ci-curl-pipe
+    message: GitLab CI pipeline downloads and executes code - runs on git push
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+    languages: [yaml]
+    paths:
+      include:
+        - ".gitlab-ci.yml"
+    patterns:
+      - pattern-either:
+          # Curl piped to bash
+          - pattern-regex: 'script:.*-\s+curl.*\|.*bash'
+          - pattern-regex: 'script:.*-\s+wget.*\|.*sh'
+
+  - id: travis-ci-curl-pipe
+    message: Travis CI config downloads and executes code - runs on git push
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+    languages: [yaml]
+    paths:
+      include:
+        - ".travis.yml"
+    patterns:
+      - pattern-either:
+          # Curl piped to bash in before_install/install hooks
+          - pattern-regex: '(before_install|install|before_script):.*curl.*\|.*bash'
+          - pattern-regex: '(before_install|install):.*wget.*\|.*sh'
+
+  - id: circle-ci-curl-pipe
+    message: CircleCI config downloads and executes code - runs on git push
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+    languages: [yaml]
+    paths:
+      include:
+        - ".circleci/config.yml"
+    patterns:
+      - pattern-regex: 'run:.*curl.*\|.*(bash|sh)'

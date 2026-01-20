@@ -1,0 +1,84 @@
+rules:
+  - id: ruby-gemspec-post-install
+    message: Ruby gemspec has post_install hook - executes after gem install
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+      references:
+        - "https://guides.rubygems.org/specification-reference/"
+    languages: [ruby]
+    paths:
+      include:
+        - "*.gemspec"
+    patterns:
+      - pattern-either:
+          # post_install hook
+          - pattern: |
+              $GEM.post_install_message = $MSG
+          - pattern-regex: 'spec\.post_install_message'
+          - pattern-regex: '\.extensions\s*='
+
+  - id: rakefile-network-exec
+    message: Rakefile executes network commands - runs during rake tasks
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+    languages: [ruby]
+    paths:
+      include:
+        - "Rakefile"
+        - "rakefile"
+    patterns:
+      - pattern-either:
+          # Network access
+          - pattern: Net::HTTP.get($URL)
+          - pattern: open($URL)
+          - pattern: |
+              system("curl", $URL)
+          - pattern: |
+              system("wget", $URL)
+          - pattern: |
+              `curl $...`
+          - pattern: |
+              `wget $...`
+
+  - id: rakefile-credential-access
+    message: Rakefile accesses credential files - review before running rake
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+    languages: [ruby]
+    paths:
+      include:
+        - "Rakefile"
+        - "rakefile"
+    patterns:
+      - pattern-either:
+          # Reading credential files
+          - pattern: File.read(".../.aws/credentials")
+          - pattern: File.read(".../.ssh/id_rsa")
+          - pattern: ENV.to_h
+
+  - id: bundler-git-source
+    message: Gemfile uses git source for dependency - verify repository trust
+    severity: INFO
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: LOW
+    languages: [ruby]
+    paths:
+      include:
+        - "Gemfile"
+    patterns:
+      - pattern-regex: "gem\\s+[\"'][^\"']+[\"']\\s*,\\s*git:"

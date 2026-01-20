@@ -1,0 +1,61 @@
+rules:
+  - id: steal-browser-cookies
+    message: Accessing browser cookie database - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A04:2021 - Insecure Design"
+      confidence: HIGH
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # Chrome/Chromium cookies - JavaScript string contains path
+          - pattern: |
+              "...$X...Chrome/Default/Cookies$Y..."
+          - pattern: |
+              "...$X...chromium/Default/Cookies$Y..."
+          - pattern: |
+              "...$X...google-chrome/Default/Cookies$Y..."
+
+          # Chrome/Chromium cookies - Python Path operations
+          - pattern: |
+              Path(...) / "..." / "Chrome" / "Default" / "Cookies"
+          - pattern: |
+              Path(...) / "..." / "chromium" / "Default" / "Cookies"
+          - pattern: |
+              Path(...) / "..." / "google-chrome" / "Default" / "Cookies"
+
+          # Firefox cookies - JavaScript
+          - pattern: |
+              "...$X...firefox$Y...cookies.sqlite$Z..."
+          - pattern: |
+              "...$X...mozilla/firefox$Y..."
+
+          # Firefox cookies - Python
+          - pattern: |
+              Path(...) / "..." / "firefox" / ... / "cookies.sqlite"
+          - pattern: |
+              Path(...) / "..." / "mozilla" / "firefox" / ...
+
+          # Safari cookies - macOS
+          - pattern: |
+              "...$X...Safari$Y...Cookies$Z..."
+          - pattern: |
+              Path(...) / "..." / "Safari" / ... / "Cookies"
+
+          # Browser Local Storage - JavaScript
+          - pattern: |
+              "...$X...Local Storage$Y..."
+          - pattern: |
+              "...$X...Session Storage$Y..."
+
+          # Browser Local Storage - Python
+          - pattern: |
+              Path(...) / "..." / "Local Storage"
+          - pattern: |
+              Path(...) / "..." / "Session Storage"
+
+          # SQLite3 connection to cookies database
+          - pattern: sqlite3.connect("...$X...Cookies$Y...")
+          - pattern: sqlite3.Database("...$X...Cookies$Y...")

@@ -1,0 +1,119 @@
+rules:
+  - id: dangerous-readme-curl-bash
+    message: README instructs users to pipe curl/wget to shell - dangerous installation pattern
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+    languages: [generic]
+    paths:
+      include:
+        - "README.md"
+        - "README.txt"
+        - "README"
+        - "INSTALL.md"
+        - "INSTALL.txt"
+        - "INSTALL"
+    patterns:
+      - pattern-either:
+          # Curl piped to bash/sh
+          - pattern-regex: 'curl.*\|.*bash'
+          - pattern-regex: 'curl.*\|.*sh'
+          - pattern-regex: 'curl.*\| sudo bash'
+          - pattern-regex: 'curl.*\| sudo sh'
+
+          # Wget piped to bash/sh
+          - pattern-regex: 'wget.*\|.*bash'
+          - pattern-regex: 'wget.*\|.*sh'
+          - pattern-regex: 'wget.*-O.*-.*\|.*bash'
+          - pattern-regex: 'wget.*-O.*-.*\|.*sh'
+
+  - id: dangerous-readme-install-script
+    message: README instructs running install/setup script - verify safety before executing
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [generic]
+    paths:
+      include:
+        - "README.md"
+        - "README.txt"
+        - "README"
+        - "INSTALL.md"
+    patterns:
+      - pattern-either:
+          # Running install scripts
+          - pattern-regex: '\./install\.sh'
+          - pattern-regex: 'bash install\.sh'
+          - pattern-regex: 'sh install\.sh'
+          - pattern-regex: '\./setup\.sh'
+          - pattern-regex: 'bash setup\.sh'
+
+          # Running with sudo
+          - pattern-regex: 'sudo \./install'
+          - pattern-regex: 'sudo bash install'
+          - pattern-regex: 'sudo \./setup'
+          - pattern-regex: 'sudo python setup\.py'
+
+          # Make commands
+          - pattern-regex: 'make install'
+          - pattern-regex: 'sudo make install'
+
+  - id: dangerous-readme-npm-install
+    message: README instructs npm install - verify package safety before executing
+    severity: INFO
+    metadata:
+      category: info-leak
+      cwe: "CWE-269: Improper Privilege Management"
+      owasp: "A04:2021 - Insecure Design"
+      confidence: LOW
+    languages: [generic]
+    paths:
+      include:
+        - "README.md"
+        - "README.txt"
+    patterns:
+      - pattern-either:
+          # npm with sudo
+          - pattern-regex: 'sudo npm install'
+          - pattern-regex: 'sudo npm i '
+
+          # Global npm install (writes to system dirs)
+          - pattern-regex: 'npm install -g'
+          - pattern-regex: 'npm i -g'
+
+          # Any npm install (informational)
+          - pattern-regex: 'npm install'
+
+  - id: dangerous-readme-pip-install
+    message: README instructs running pip/python install commands - verify package source
+    severity: INFO
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: LOW
+    languages: [generic]
+    paths:
+      include:
+        - "README.md"
+        - "README.txt"
+    patterns:
+      - pattern-either:
+          # Python setup.py install
+          - pattern-regex: 'python setup\.py install'
+          - pattern-regex: 'python3 setup\.py install'
+          - pattern-regex: 'sudo python setup\.py'
+
+          # pip install (any)
+          - pattern-regex: 'pip install'
+          - pattern-regex: 'pip3 install'
+
+          # pip install from git
+          - pattern-regex: 'pip install.*git\+'
+          - pattern-regex: 'pip3 install.*git\+'

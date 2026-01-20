@@ -1,0 +1,132 @@
+rules:
+  - id: suspicious-install-script-network
+    message: Install/build script downloads and executes code from network - high risk
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+    languages: [bash, sh]
+    paths:
+      include:
+        - "install.sh"
+        - "setup.sh"
+        - "build.sh"
+        - "configure"
+        - "bootstrap.sh"
+        - "init.sh"
+    patterns:
+      - pattern-either:
+          # Curl/wget piped to bash
+          - pattern: |
+              curl $URL | bash
+          - pattern: |
+              curl $URL | sh
+          - pattern: |
+              wget $URL | bash
+          - pattern: |
+              wget $URL -O - | bash
+
+          # Download and execute
+          - pattern: |
+              curl $URL
+              ...
+              chmod +x $FILE
+          - pattern: |
+              wget $URL
+              ...
+              chmod +x $FILE
+              ...
+              ./$FILE
+
+          # Eval with network content
+          - pattern: |
+              eval $(curl $URL)
+          - pattern: |
+              eval "$(wget $URL)"
+
+  - id: suspicious-install-script-credentials
+    message: Install/build script accesses credential files - verify legitimacy
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [bash, sh]
+    paths:
+      include:
+        - "install.sh"
+        - "setup.sh"
+        - "build.sh"
+        - "configure"
+        - "bootstrap.sh"
+    patterns:
+      - pattern-either:
+          # AWS credentials
+          - pattern: cat "$HOME/.aws/credentials"
+          - pattern: cat ~/.aws/credentials
+
+          # SSH keys
+          - pattern: cat "$HOME/.ssh/id_rsa"
+          - pattern: cat ~/.ssh/id_rsa
+          - pattern: cat "$HOME/.ssh/id_dsa"
+          - pattern: cat "$HOME/.ssh/id_ecdsa"
+
+          # Environment dump
+          - pattern: env
+          - pattern: printenv
+
+          # .env files
+          - pattern: cat .env
+          - pattern: source .env
+
+  - id: suspicious-build-script-sudo
+    message: Build script uses sudo - may escalate privileges unexpectedly
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-269: Improper Privilege Management"
+      owasp: "A04:2021 - Insecure Design"
+      confidence: MEDIUM
+    languages: [bash, sh]
+    paths:
+      include:
+        - "install.sh"
+        - "setup.sh"
+        - "build.sh"
+        - "configure"
+    patterns:
+      - pattern-either:
+          # Sudo with curl/wget
+          - pattern: sudo curl $URL
+          - pattern: sudo wget $URL
+
+          # Sudo with bash -c
+          - pattern: |
+              sudo bash -c $CMD
+
+          # Sudo chmod on downloaded files
+          - pattern: |
+              sudo chmod +x $FILE
+
+  - id: configure-script-credential-access
+    message: Configure script accesses sensitive files - unusual for build scripts
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+    languages: [bash, sh]
+    paths:
+      include:
+        - "configure"
+        - "configure.sh"
+        - "config.sh"
+    patterns:
+      - pattern-either:
+          # Reading home directory credentials
+          - pattern: cat "$HOME/.aws/credentials"
+          - pattern: cat "$HOME/.ssh/id_rsa"

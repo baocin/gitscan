@@ -1,0 +1,47 @@
+rules:
+  - id: exfiltrate-env-vars-js
+    message: Dumping environment variables - potential credential exfiltration
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: HIGH
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # JavaScript - Stringify entire process.env
+          - pattern: JSON.stringify(process.env)
+          - pattern: JSON.stringify(process.env, ...)
+
+          # JavaScript - Object.keys/values/entries to enumerate all env vars
+          - pattern: Object.keys(process.env)
+          - pattern: Object.values(process.env)
+          - pattern: Object.entries(process.env)
+
+  - id: exfiltrate-env-vars-python
+    message: Dumping environment variables - potential credential exfiltration
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: HIGH
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Python - Convert os.environ to dict
+          - pattern: dict(os.environ)
+
+          # Python - Iterate over all environment variables
+          - pattern: os.environ.items()
+          - pattern: list(os.environ.items())
+
+          # Python - Iterate with loop
+          - pattern: |
+              for $K, $V in os.environ.items():
+                  ...
+
+          # Python - Dictionary comprehension capturing env vars with sensitive keywords
+          - pattern: |
+              {$K: $V for $K, $V in os.environ.items() if ...}

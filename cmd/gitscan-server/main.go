@@ -51,7 +51,7 @@ func main() {
 		resetDB           = flag.Bool("reset-db", true, "Reset database on startup (default: true)")
 		showVersion       = flag.Bool("version", false, "Show version and exit")
 		allowCustomHosts  = flag.Bool("allow-custom-hosts", false, "Allow custom git hosts (self-hosted repos). Default: only github.com, gitlab.com, bitbucket.org")
-		infoLeakOnly      = flag.Bool("info-leak-only", false, "Only scan for credential theft patterns (9x faster, focuses on malicious code)")
+		infoLeakOnly      = flag.Bool("info-leak-only", true, "Only scan for credential theft patterns (9x faster, focuses on malicious code)")
 		enableBlocklist   = flag.Bool("enable-blocklist", true, "Enable threat intelligence blocklists")
 		blocklistUpdate   = flag.Int("blocklist-update-hours", 12, "Hours between blocklist updates")
 	)

@@ -1,0 +1,78 @@
+rules:
+  - id: msbuild-exec-task
+    message: MSBuild project executes shell commands via Exec task - runs on dotnet build
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+      references:
+        - "https://learn.microsoft.com/en-us/visualstudio/msbuild/exec-task"
+    languages: [xml]
+    paths:
+      include:
+        - "*.csproj"
+        - "*.vbproj"
+        - "*.fsproj"
+        - "Directory.Build.props"
+        - "Directory.Build.targets"
+    patterns:
+      - pattern-either:
+          # Exec task with curl/wget/powershell
+          - pattern-regex: '<Exec\s+Command="[^"]*curl'
+          - pattern-regex: '<Exec\s+Command="[^"]*wget'
+          - pattern-regex: '<Exec\s+Command="[^"]*powershell'
+          - pattern-regex: '<Exec\s+Command="[^"]*Invoke-WebRequest'
+
+  - id: msbuild-prebuild-target
+    message: MSBuild PreBuild/BeforeBuild target - executes before compilation
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [xml]
+    paths:
+      include:
+        - "*.csproj"
+        - "*.vbproj"
+        - "*.fsproj"
+    patterns:
+      - pattern-either:
+          # Pre/Post build targets
+          - pattern-regex: '<Target\s+Name="(PreBuild|BeforeBuild|AfterBuild|PostBuild)"'
+
+  - id: nuget-install-script
+    message: NuGet package has install.ps1 script - executes on package install
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+    languages: [generic]
+    paths:
+      include:
+        - "tools/install.ps1"
+        - "tools/uninstall.ps1"
+        - "tools/init.ps1"
+    patterns:
+      - pattern-regex: '.*'  # Any install script is noteworthy
+
+  - id: msbuild-download-file
+    message: MSBuild downloads files during build - verify source trust
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: MEDIUM
+    languages: [xml]
+    paths:
+      include:
+        - "*.csproj"
+        - "*.vbproj"
+    patterns:
+      - pattern-regex: '<(DownloadFile|WebClient)'

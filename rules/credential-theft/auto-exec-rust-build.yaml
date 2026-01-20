@@ -1,0 +1,92 @@
+rules:
+  - id: rust-build-script-network
+    message: Rust build.rs script downloads from network - executes automatically on cargo build
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+      references:
+        - "https://doc.rust-lang.org/cargo/reference/build-scripts.html"
+    languages: [rust]
+    paths:
+      include:
+        - "build.rs"
+        - "*/build.rs"
+    patterns:
+      - pattern-either:
+          # Network access patterns
+          - pattern: reqwest::blocking::get($URL)
+          - pattern: reqwest::get($URL)
+          - pattern: ureq::get($URL)
+          - pattern: curl::easy::Easy::new()
+
+          # Command execution with curl/wget
+          - pattern: |
+              Command::new("curl")
+          - pattern: |
+              Command::new("wget")
+
+  - id: rust-build-script-credentials
+    message: Rust build.rs accesses credential files - executes at build time
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [rust]
+    paths:
+      include:
+        - "build.rs"
+        - "*/build.rs"
+    patterns:
+      - pattern-either:
+          # AWS credentials
+          - pattern: std::fs::read_to_string(".../.aws/credentials")
+          - pattern: PathBuf::from(".../.aws/credentials")
+
+          # SSH keys
+          - pattern: std::fs::read_to_string(".../.ssh/id_rsa")
+          - pattern: PathBuf::from(".../.ssh/id_rsa")
+
+          # Environment variable dumping
+          - pattern: std::env::vars()
+
+  - id: rust-build-script-present
+    message: Rust build.rs present - code executes automatically during cargo build (informational)
+    severity: INFO
+    metadata:
+      category: info-leak
+      cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      owasp: "A06:2021 - Vulnerable and Outdated Components"
+      confidence: LOW
+    languages: [rust]
+    paths:
+      include:
+        - "build.rs"
+    patterns:
+      - pattern-regex: '^fn main\(\)'
+
+  - id: rust-build-script-shell-exec
+    message: Rust build.rs executes shell commands - review before cargo build
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [rust]
+    paths:
+      include:
+        - "build.rs"
+        - "*/build.rs"
+    patterns:
+      - pattern-either:
+          # Command execution
+          - pattern: Command::new($CMD)
+
+          # Direct shell invocation
+          - pattern: Command::new("sh")
+          - pattern: Command::new("bash")
