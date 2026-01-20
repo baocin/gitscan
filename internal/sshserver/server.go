@@ -146,7 +146,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 
 	// Configuration for SSH auto-ban
 	const (
-		suspiciousSSHThreshold = 5                // Ban after 5 failed handshakes
+		suspiciousSSHThreshold = 3                // Ban after 3 failed handshakes
 		suspiciousSSHWindow    = 2 * time.Minute  // Within 2 minutes
 		sshBanDuration         = 48 * time.Hour   // Ban for 48 hours
 	)
