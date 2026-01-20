@@ -204,7 +204,7 @@ Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 Environment="XDG_CACHE_HOME=/var/lib/gitvet/cache"
 Environment="XDG_CONFIG_HOME=/var/lib/gitvet"
 Environment="SEMGREP_SEND_METRICS=off"
-ExecStart=/opt/gitvet/gitvet-server -listen 0.0.0.0:80 -tls-listen 0.0.0.0:443 -tls-cert /etc/letsencrypt/live/git.vet/fullchain.pem -tls-key /etc/letsencrypt/live/git.vet/privkey.pem -ssh-listen 0.0.0.0:22 -enable-ssh=true -db /var/lib/gitvet/data/gitvet.db -cache-dir /var/lib/gitvet/cache -opengrep SCANNER_PATH_PLACEHOLDER
+ExecStart=/opt/gitvet/gitvet-server -listen 0.0.0.0:80 -tls-listen 0.0.0.0:443 -tls-cert /etc/letsencrypt/live/git.vet/fullchain.pem -tls-key /etc/letsencrypt/live/git.vet/privkey.pem -ssh-listen 0.0.0.0:22 -enable-ssh=true -db /var/lib/gitvet/data/gitvet.db -cache-dir /var/lib/gitvet/cache -rules /opt/gitvet/rules/credential-theft -opengrep SCANNER_PATH_PLACEHOLDER
 Restart=always
 RestartSec=5
 
@@ -213,7 +213,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/gitvet
-ReadOnlyPaths=/etc/letsencrypt
+ReadOnlyPaths=/etc/letsencrypt /opt/gitvet/rules
 PrivateTmp=true
 PrivateDevices=true
 ProtectKernelTunables=true
@@ -283,6 +283,36 @@ fi
 # Ensure correct ownership
 if id "gitvet" &>/dev/null; then
     chown -R gitvet:gitvet /var/lib/gitvet 2>/dev/null || true
+fi
+
+# Copy rules directory to install location
+log_info "Installing detection rules..."
+RULES_SRC="$TEMP_DIR/rules"
+RULES_DEST="$INSTALL_DIR/rules"
+
+if [ -d "$RULES_SRC" ]; then
+    # Create backup of existing rules if they exist
+    if [ -d "$RULES_DEST" ]; then
+        RULES_BACKUP="$RULES_DEST$BACKUP_SUFFIX"
+        log_info "Backing up existing rules to $RULES_BACKUP"
+        cp -r "$RULES_DEST" "$RULES_BACKUP" 2>/dev/null || log_warn "Failed to backup existing rules"
+    fi
+
+    # Copy new rules
+    if cp -r "$RULES_SRC" "$RULES_DEST"; then
+        RULE_COUNT=$(find "$RULES_DEST" -name "*.yaml" -o -name "*.yml" | wc -l)
+        log_info "Installed $RULE_COUNT detection rules to $RULES_DEST"
+
+        # Set ownership
+        if id "gitvet" &>/dev/null; then
+            chown -R gitvet:gitvet "$RULES_DEST" 2>/dev/null || log_warn "Failed to set ownership on rules"
+        fi
+    else
+        log_error "Failed to copy rules directory!"
+        log_warn "Detection rules may not be available"
+    fi
+else
+    log_warn "Rules directory not found at $RULES_SRC - service may not have detection rules"
 fi
 
 # Install/update opengrep if needed
