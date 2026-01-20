@@ -295,7 +295,7 @@ func main() {
 			HostKeyPath: *sshHostKeyPath,
 		}
 		var err error
-		sshSrv, err = sshserver.New(sshConfig, gitHandler, database)
+		sshSrv, err = sshserver.New(sshConfig, gitHandler, database, blocklistManager)
 		if err != nil {
 			log.Fatalf("Failed to create SSH server: %v", err)
 		}

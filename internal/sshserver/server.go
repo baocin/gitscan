@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/baocin/gitscan/internal/blocklist"
 	"github.com/baocin/gitscan/internal/db"
 	"github.com/baocin/gitscan/internal/githttp"
 )
@@ -44,12 +45,13 @@ func (c *connState) setAgent(ch ssh.Channel) {
 
 // Server implements an SSH server for git operations
 type Server struct {
-	addr       string
-	hostKey    ssh.Signer
-	handler    *githttp.Handler
-	db         *db.DB
-	config     *ssh.ServerConfig
-	listener   net.Listener
+	addr         string
+	hostKey      ssh.Signer
+	handler      *githttp.Handler
+	db           *db.DB
+	config       *ssh.ServerConfig
+	listener     net.Listener
+	blocklistMgr *blocklist.Manager
 }
 
 // Config holds SSH server configuration
@@ -67,7 +69,7 @@ func DefaultConfig() Config {
 }
 
 // New creates a new SSH server
-func New(config Config, handler *githttp.Handler, database *db.DB) (*Server, error) {
+func New(config Config, handler *githttp.Handler, database *db.DB, blocklistMgr *blocklist.Manager) (*Server, error) {
 	// Load or generate host key
 	hostKey, err := loadOrGenerateHostKey(config.HostKeyPath)
 	if err != nil {
@@ -94,11 +96,12 @@ func New(config Config, handler *githttp.Handler, database *db.DB) (*Server, err
 	sshConfig.AddHostKey(hostKey)
 
 	return &Server{
-		addr:    config.ListenAddr,
-		hostKey: hostKey,
-		handler: handler,
-		db:      database,
-		config:  sshConfig,
+		addr:         config.ListenAddr,
+		hostKey:      hostKey,
+		handler:      handler,
+		db:           database,
+		config:       sshConfig,
+		blocklistMgr: blocklistMgr,
 	}, nil
 }
 
@@ -141,10 +144,56 @@ func (s *Server) Close() error {
 func (s *Server) handleConnection(netConn net.Conn) {
 	defer netConn.Close()
 
+	// Configuration for SSH auto-ban
+	const (
+		suspiciousSSHThreshold = 5                // Ban after 5 failed handshakes
+		suspiciousSSHWindow    = 2 * time.Minute  // Within 2 minutes
+		sshBanDuration         = 48 * time.Hour   // Ban for 48 hours
+	)
+
+	// Extract client IP before handshake
+	clientIP := netConn.RemoteAddr().String()
+	if idx := strings.LastIndex(clientIP, ":"); idx != -1 {
+		clientIP = clientIP[:idx] // Strip port
+	}
+
+	// Check threat intelligence blocklist first (fail fast, save CPU)
+	if s.blocklistMgr != nil && s.blocklistMgr.IsLoaded() {
+		blocked, source, reason := s.blocklistMgr.IsBlocked(clientIP)
+		if blocked {
+			log.Printf("[ssh] [BLOCKLIST] Rejected IP %s from %s: %s", clientIP, source, reason)
+			return
+		}
+	}
+
+	// Check if IP is already banned
+	if s.db != nil {
+		banned, reason, err := s.db.IsIPBanned(clientIP)
+		if err == nil && banned {
+			log.Printf("[ssh] [SECURITY] Rejected connection from banned IP %s: %s", clientIP, reason)
+			return
+		}
+	}
+
 	// Perform SSH handshake
 	sshConn, chans, reqs, err := ssh.NewServerConn(netConn, s.config)
 	if err != nil {
-		log.Printf("[ssh] Failed to handshake: %v", err)
+		log.Printf("[ssh] Failed to handshake from %s: %v", clientIP, err)
+
+		// Track failed handshakes and auto-ban abusive IPs
+		if s.db != nil {
+			// Log this as a suspicious request
+			errMsg := fmt.Sprintf("%v", err)
+			s.db.LogSuspiciousRequest(clientIP, fmt.Sprintf("SSH handshake failure: %s", errMsg), "ssh")
+
+			// Check if this IP has too many recent failures
+			count, countErr := s.db.CountRecentSuspiciousRequests(clientIP, suspiciousSSHWindow)
+			if countErr == nil && count >= suspiciousSSHThreshold {
+				reason := fmt.Sprintf("Auto-banned: %d SSH handshake failures in %v", count, suspiciousSSHWindow)
+				s.db.BanIP(clientIP, reason, sshBanDuration)
+				log.Printf("[ssh] [AUTO-BAN] Banned IP %s: %s", clientIP, reason)
+			}
+		}
 		return
 	}
 	defer sshConn.Close()
