@@ -956,3 +956,121 @@ func (db *DB) LinkFilesToScan(scanID int64, files []ScanFile) error {
 
 	return tx.Commit()
 }
+
+// BlocklistEntry represents an entry in the threat intelligence blocklist
+type BlocklistEntry struct {
+	IP          string
+	Source      string
+	Reason      string
+	FirstSeen   time.Time
+	LastUpdated time.Time
+}
+
+// GetAllBlocklistEntries retrieves all blocklist entries from the database
+func (db *DB) GetAllBlocklistEntries() ([]BlocklistEntry, error) {
+	rows, err := db.conn.Query(`
+		SELECT ip, source, reason, first_seen, last_updated
+		FROM blocklist_ips
+		ORDER BY source, ip
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []BlocklistEntry
+	for rows.Next() {
+		var entry BlocklistEntry
+		var reason sql.NullString
+		err := rows.Scan(&entry.IP, &entry.Source, &reason, &entry.FirstSeen, &entry.LastUpdated)
+		if err != nil {
+			return nil, err
+		}
+		entry.Reason = reason.String
+		entries = append(entries, entry)
+	}
+
+	return entries, rows.Err()
+}
+
+// UpdateBlocklistEntries updates blocklist entries for a given source
+// This replaces all existing entries for the source
+func (db *DB) UpdateBlocklistEntries(source string, entries []BlocklistEntry) error {
+	// Start transaction
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Delete existing entries for this source
+	_, err = tx.Exec(`DELETE FROM blocklist_ips WHERE source = ?`, source)
+	if err != nil {
+		return err
+	}
+
+	// Prepare insert statement
+	stmt, err := tx.Prepare(`
+		INSERT INTO blocklist_ips (ip, source, reason, first_seen, last_updated)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	// Insert new entries
+	for _, entry := range entries {
+		_, err = stmt.Exec(entry.IP, source, entry.Reason)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// IsIPInBlocklist checks if an IP is in the blocklist
+func (db *DB) IsIPInBlocklist(ip string) (bool, string, string, error) {
+	var source, reason string
+	var nullReason sql.NullString
+
+	err := db.conn.QueryRow(`
+		SELECT source, reason FROM blocklist_ips WHERE ip = ? LIMIT 1
+	`, ip).Scan(&source, &nullReason)
+
+	if err == sql.ErrNoRows {
+		return false, "", "", nil
+	}
+	if err != nil {
+		return false, "", "", err
+	}
+
+	reason = nullReason.String
+	return true, source, reason, nil
+}
+
+// GetBlocklistStats returns statistics about the blocklist
+func (db *DB) GetBlocklistStats() (map[string]int, error) {
+	rows, err := db.conn.Query(`
+		SELECT source, COUNT(*) as count
+		FROM blocklist_ips
+		GROUP BY source
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	stats := make(map[string]int)
+	for rows.Next() {
+		var source string
+		var count int
+		if err := rows.Scan(&source, &count); err != nil {
+			return nil, err
+		}
+		stats[source] = count
+	}
+
+	return stats, rows.Err()
+}

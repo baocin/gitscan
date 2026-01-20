@@ -118,3 +118,16 @@ CREATE INDEX IF NOT EXISTS idx_banned_ips_expires ON banned_ips(expires_at);
 CREATE INDEX IF NOT EXISTS idx_file_scans_hash_level ON file_scans(file_hash, scan_level);
 CREATE INDEX IF NOT EXISTS idx_scan_files_scan ON scan_files(scan_id);
 CREATE INDEX IF NOT EXISTS idx_scan_files_hash ON scan_files(file_hash);
+
+-- Threat intelligence blocklist
+CREATE TABLE IF NOT EXISTS blocklist_ips (
+    ip TEXT NOT NULL,
+    source TEXT NOT NULL,
+    reason TEXT,
+    first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ip, source)
+);
+
+CREATE INDEX IF NOT EXISTS idx_blocklist_source ON blocklist_ips(source);
+CREATE INDEX IF NOT EXISTS idx_blocklist_ip ON blocklist_ips(ip);

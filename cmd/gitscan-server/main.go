@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/baocin/gitscan/internal/blocklist"
 	"github.com/baocin/gitscan/internal/cache"
 	"github.com/baocin/gitscan/internal/db"
 	"github.com/baocin/gitscan/internal/githttp"
@@ -51,6 +52,8 @@ func main() {
 		showVersion       = flag.Bool("version", false, "Show version and exit")
 		allowCustomHosts  = flag.Bool("allow-custom-hosts", false, "Allow custom git hosts (self-hosted repos). Default: only github.com, gitlab.com, bitbucket.org")
 		infoLeakOnly      = flag.Bool("info-leak-only", false, "Only scan for credential theft patterns (9x faster, focuses on malicious code)")
+		enableBlocklist   = flag.Bool("enable-blocklist", true, "Enable threat intelligence blocklists")
+		blocklistUpdate   = flag.Int("blocklist-update-hours", 12, "Hours between blocklist updates")
 	)
 	flag.Parse()
 
@@ -123,6 +126,30 @@ func main() {
 	// Initialize metrics
 	metricsCollector := metrics.New()
 	log.Printf("Metrics collector initialized")
+
+	// Initialize blocklist if enabled
+	var blocklistManager *blocklist.Manager
+	if *enableBlocklist {
+		blocklistCfg := blocklist.DefaultConfig()
+		blocklistCfg.Enabled = true
+		blocklistCfg.UpdateInterval = time.Duration(*blocklistUpdate) * time.Hour
+		blocklistManager = blocklist.New(database, blocklistCfg)
+
+		// Load existing entries from database
+		ctx := context.Background()
+		if err := blocklistManager.LoadFromDatabase(ctx); err != nil {
+			log.Printf("[blocklist] Warning: Failed to load from database: %v", err)
+		} else {
+			stats := blocklistManager.GetStats()
+			log.Printf("[blocklist] Loaded %d entries from database", stats.TotalEntries)
+		}
+
+		// Start automatic updates in background
+		go blocklistManager.StartAutoUpdates(context.Background())
+		log.Printf("[blocklist] Enabled with %d hour update interval", *blocklistUpdate)
+	} else {
+		log.Printf("[blocklist] Disabled")
+	}
 
 	// Create git HTTP handler
 	handlerCfg := githttp.DefaultConfig()
@@ -225,7 +252,7 @@ func main() {
 	// Create HTTP server with security middleware
 	httpServer := &http.Server{
 		Addr:         *listenAddr,
-		Handler:      logRequest(blockSuspiciousPaths(database, mux)),
+		Handler:      logRequest(blockSuspiciousPaths(database, blocklistManager, mux)),
 		ReadTimeout:  5 * time.Minute,
 		WriteTimeout: 5 * time.Minute,
 		IdleTimeout:  60 * time.Second,
@@ -247,7 +274,7 @@ func main() {
 	if *tlsCert != "" && *tlsKey != "" {
 		httpsServer = &http.Server{
 			Addr:         *tlsAddr,
-			Handler:      logRequest(blockSuspiciousPaths(database, mux)),
+			Handler:      logRequest(blockSuspiciousPaths(database, blocklistManager, mux)),
 			ReadTimeout:  5 * time.Minute,
 			WriteTimeout: 5 * time.Minute,
 			IdleTimeout:  60 * time.Second,
@@ -316,12 +343,12 @@ func main() {
 }
 
 // blockSuspiciousPaths is a middleware that blocks common hacking/scanning attempts
-func blockSuspiciousPaths(database *db.DB, next http.Handler) http.Handler {
+func blockSuspiciousPaths(database *db.DB, blocklistMgr *blocklist.Manager, next http.Handler) http.Handler {
 	// Configuration for auto-ban
 	const (
 		suspiciousRequestThreshold = 3                // Ban after 3 suspicious requests (reduced from 5)
 		suspiciousRequestWindow    = 2 * time.Minute  // Within 2 minutes (reduced from 5)
-		banDuration                = 48 * time.Hour   // Ban for 48 hours (increased from 24)
+		banDuration                = 96 * time.Hour   // Ban for 96 hours (4 days)
 		tarpitDelay                = 30 * time.Second // Delay suspicious requests by 30s
 	)
 
@@ -338,6 +365,22 @@ func blockSuspiciousPaths(database *db.DB, next http.Handler) http.Handler {
 			clientIP = xri
 		} else if idx := strings.LastIndex(clientIP, ":"); idx != -1 {
 			clientIP = clientIP[:idx]
+		}
+
+		// Check threat intelligence blocklist first (fail fast)
+		if blocklistMgr != nil && blocklistMgr.IsLoaded() {
+			blocked, source, reason := blocklistMgr.IsBlocked(clientIP)
+			if blocked {
+				log.Printf("[BLOCKLIST] Rejected IP %s from %s: %s", clientIP, source, reason)
+
+				// Auto-ban blocklisted IPs for 7 days
+				if database != nil {
+					database.BanIP(clientIP, fmt.Sprintf("Blocklist: %s (%s)", source, reason), 7*24*time.Hour)
+				}
+
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 		}
 
 		// Check if IP is already banned
@@ -437,6 +480,19 @@ func blockSuspiciousPaths(database *db.DB, next http.Handler) http.Handler {
 			"/c99.php",
 			"/r57.php",
 			"/wso.php",
+
+			// Credential/config file harvesting
+			"/secrets.json",
+			"/credentials.json",
+			"/settings.json",
+			"/settings.js",
+			"/docker-compose",
+			"/config/master.key",
+			"/serverless.yml",
+			"/serverless.yaml",
+			"/vercel.json",
+			"/netlify.toml",
+			"/appsettings",
 		}
 
 		// Check for generic PHP file requests (except legitimate ones)
