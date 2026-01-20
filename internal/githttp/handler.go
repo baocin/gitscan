@@ -672,17 +672,15 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	report.WriteBoxTop(width)
 
 	// Run Risk Score - prominent display
+	// Higher scores are better (100 = safe, 0 = dangerous)
 	grade := scanner.RiskGrade(scan.SecurityScore)
 	var scoreColor string
 	var scoreIcon string
 	switch {
-	case scan.SecurityScore == 0:
+	case scan.SecurityScore >= 90:
 		scoreColor = Green
 		scoreIcon = "✓"
-	case scan.SecurityScore <= 30:
-		scoreColor = Yellow
-		scoreIcon = "⚠"
-	case scan.SecurityScore <= 60:
+	case scan.SecurityScore >= 60:
 		scoreColor = Yellow
 		scoreIcon = "⚠"
 	default:

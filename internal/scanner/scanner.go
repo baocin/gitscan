@@ -117,42 +117,44 @@ type Result struct {
 	PartialReason    string    // Why partial: "timeout", "cancelled", etc.
 }
 
-// RunRiskWeights defines risk points added per severity level
+// RunRiskWeights defines risk points deducted per severity level
+// Score starts at 100 (perfect) and decreases with findings
 var RunRiskWeights = map[string]int{
-	"info-leak": 50, // +50 risk per info leak (immediate danger to cloner)
-	"critical":  20, // +20 risk per critical finding
-	"high":      10, // +10 risk per high finding
-	"medium":    3,  // +3 risk per medium finding
-	"low":       1,  // +1 risk per low finding
-	"info":      0,  // info findings don't affect risk
+	"info-leak": 1,  // -1 point per info leak (immediate danger to cloner)
+	"critical":  5,  // -5 points per critical finding
+	"high":      3,  // -3 points per high finding
+	"medium":    2,  // -2 points per medium finding
+	"low":       1,  // -1 point per low finding
+	"info":      0,  // info findings don't affect score
 }
 
 // CalculateRunRisk computes a 0-100 run risk score based on findings
-// 0 = safe to run, 100 = extremely dangerous to execute
+// 100 = safe to run (no issues), 0 = extremely dangerous to execute
 func CalculateRunRisk(infoLeak, critical, high, medium, low int) int {
-	risk := 0
-	risk += infoLeak * RunRiskWeights["info-leak"]
-	risk += critical * RunRiskWeights["critical"]
-	risk += high * RunRiskWeights["high"]
-	risk += medium * RunRiskWeights["medium"]
-	risk += low * RunRiskWeights["low"]
+	score := 100
+	score -= infoLeak * RunRiskWeights["info-leak"]
+	score -= critical * RunRiskWeights["critical"]
+	score -= high * RunRiskWeights["high"]
+	score -= medium * RunRiskWeights["medium"]
+	score -= low * RunRiskWeights["low"]
 
-	if risk > 100 {
-		risk = 100
+	if score < 0 {
+		score = 0
 	}
-	return risk
+	return score
 }
 
 // RiskGrade returns a letter grade for the run risk score
+// Higher scores are better (100 = perfect, 0 = dangerous)
 func RiskGrade(risk int) string {
 	switch {
-	case risk == 0:
-		return "A" // Safe
-	case risk <= 10:
+	case risk >= 90:
+		return "A" // Safe - minimal or no issues
+	case risk >= 80:
 		return "B" // Low risk
-	case risk <= 30:
+	case risk >= 60:
 		return "C" // Medium risk
-	case risk <= 60:
+	case risk >= 40:
 		return "D" // High risk
 	default:
 		return "F" // Dangerous - do not run
