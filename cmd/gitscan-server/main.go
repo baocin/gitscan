@@ -348,7 +348,7 @@ func blockSuspiciousPaths(database *db.DB, blocklistMgr *blocklist.Manager, next
 	const (
 		suspiciousRequestThreshold = 3                // Ban after 3 suspicious requests (reduced from 5)
 		suspiciousRequestWindow    = 2 * time.Minute  // Within 2 minutes (reduced from 5)
-		banDuration                = 96 * time.Hour   // Ban for 96 hours (4 days)
+		banDuration                = 48 * time.Hour   // Ban for 48 hours (2 days)
 		tarpitDelay                = 30 * time.Second // Delay suspicious requests by 30s
 	)
 
@@ -368,16 +368,11 @@ func blockSuspiciousPaths(database *db.DB, blocklistMgr *blocklist.Manager, next
 		}
 
 		// Check threat intelligence blocklist first (fail fast)
+		// IPs in blocklist are already considered banned, no need to add to ban table
 		if blocklistMgr != nil && blocklistMgr.IsLoaded() {
 			blocked, source, reason := blocklistMgr.IsBlocked(clientIP)
 			if blocked {
 				log.Printf("[BLOCKLIST] Rejected IP %s from %s: %s", clientIP, source, reason)
-
-				// Auto-ban blocklisted IPs for 7 days
-				if database != nil {
-					database.BanIP(clientIP, fmt.Sprintf("Blocklist: %s (%s)", source, reason), 7*24*time.Hour)
-				}
-
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
