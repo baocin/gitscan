@@ -1,7 +1,7 @@
 rules:
   - id: precommit-hooks-present
     message: Pre-commit hooks configuration detected - hooks execute on git commit
-    severity: INFO
+    severity: LOW
     metadata:
       category: info-leak
       cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
@@ -18,7 +18,7 @@ rules:
 
   - id: precommit-custom-repo
     message: Pre-commit uses custom repository - verify repository trust before running
-    severity: WARNING
+    severity: LOW
     metadata:
       category: info-leak
       cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
