@@ -104,38 +104,38 @@ Git's smart HTTP protocol includes a **sideband channel** for sending progress m
 ### Standard Flow (Report Only)
 
 ```
-$ git clone https://git.vet/github.com/WebGoat/WebGoat
-Cloning into 'WebGoat'...
+$ git clone https://git.vet/github.com/baocin/known-malicious-repo
+Cloning into 'known-malicious-repo'...
 remote:
-remote: ⠋ [git.vet] Fetching repository...
-remote: ⠙ [git.vet] Fetched. 89MB, 2,847 files
-remote: ⠹ [git.vet] Scanning with opengrep...
-remote: ⠸ [git.vet] Progress: 742 / 2,847 files (26%)
-remote: ⠼ [git.vet] Progress: 1,936 / 2,847 files (68%)
+remote: [git.vet] Running preflight checks...
+remote: [git.vet] Preflight OK
+remote: ⠋ [git.vet] Fetching from github.com...
+remote: ✓ [git.vet] Repository fetched
+remote: ⠙ [git.vet] Scanning for vulnerabilities...
 remote: ✓ [git.vet] Scan complete!
 remote:
 remote: ╔══════════════════════════════════════════════════════════════════╗
-remote: ║  GIT.VET SECURITY REPORT                                         ║
-remote: ║  Repository: WebGoat/WebGoat                                     ║
-remote: ║  Commit: d4238ab4                                                ║
-remote: ║  Scanned: 2,847 files in 4.1s                                    ║
+remote: ║ ⚠ RUN RISK: 100/100 (F) - DO NOT RUN THIS CODE                  ║
 remote: ╠══════════════════════════════════════════════════════════════════╣
-remote: ║  ✗ 41 Critical   ⚠ 141 High   ◆ 0 Medium   ○ 0 Low              ║
+remote: ║ 🚨 26 Critical    ⚠ 0 High    ℹ 4 Medium    - 0 Low              ║
 remote: ╠══════════════════════════════════════════════════════════════════╣
 remote: ║                                                                  ║
-remote: ║  CRITICAL: SQL Injection vulnerability                           ║
-remote: ║  └─ src/main/java/org/owasp/webgoat/lessons/sqlinjection/       ║
+remote: ║  CRITICAL: Malicious npm postinstall hook                        ║
+remote: ║  └─ package.json:7                                               ║
 remote: ║                                                                  ║
-remote: ║  CRITICAL: Path Traversal vulnerability                          ║
-remote: ║  └─ src/main/java/org/owasp/webgoat/lessons/pathtraversal/       ║
+remote: ║  CRITICAL: Shell script accessing SSH private keys               ║
+remote: ║  └─ scripts/steal_ssh.sh:10                                      ║
+remote: ║                                                                  ║
+remote: ║  CRITICAL: Python script exfiltrating environment variables      ║
+remote: ║  └─ setup.py:52                                                  ║
 remote: ║                                                                  ║
 remote: ╠══════════════════════════════════════════════════════════════════╣
-remote: ║  Full report: https://git.vet/r/d4238ab4                         ║
+remote: ║  Full report: https://git.vet/r/54615e9b                         ║
 remote: ║                                                                  ║
 remote: ║          [Scannable QR code displays here]                       ║
 remote: ║         Scan QR to view full web report                          ║
 remote: ╠══════════════════════════════════════════════════════════════════╣
-remote: ║  To clone: git clone https://github.com/WebGoat/WebGoat          ║
+remote: ║  To clone: git clone https://github.com/baocin/known-malicious-repo ║
 remote: ╚══════════════════════════════════════════════════════════════════╝
 remote:
 fatal: Could not read from remote repository.

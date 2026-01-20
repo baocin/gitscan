@@ -38,30 +38,31 @@ The scan results appear directly in your terminal.
 ## Example
 
 ```
-$ git clone https://git.vet/github.com/WebGoat/WebGoat
-Cloning into 'WebGoat'...
+$ git clone https://git.vet/github.com/baocin/known-malicious-repo
+Cloning into 'known-malicious-repo'...
 remote:
-remote: [git.vet] Fetching from github.com (shallow clone)...
-remote: [git.vet] Fetched. 2847 files
-remote: [git.vet] Scanning with opengrep...
-remote: [git.vet] Scan complete!
+remote: [git.vet] Running preflight checks...
+remote: [git.vet] Preflight OK
+remote: ⠋ [git.vet] Fetching from github.com...
+remote: ✓ [git.vet] Repository fetched
+remote: ⠙ [git.vet] Scanning for vulnerabilities...
+remote: ✓ [git.vet] Scan complete!
 remote:
-remote: +------------------------------------------------------------------+
-remote: |  GIT.VET SECURITY REPORT                                         |
-remote: |  Repository: github.com/WebGoat/WebGoat                          |
-remote: |  Commit: d4238ab4                                                |
-remote: |  Scanned: 2847 files in 4.1s                                     |
-remote: +------------------------------------------------------------------+
-remote: |  X 41 Critical   ! 141 High   * 0 Medium   - 0 Low               |
-remote: +------------------------------------------------------------------+
-remote: |  Full report: https://git.vet/r/d4238ab4                         |
-remote: |  To clone: git clone https://github.com/WebGoat/WebGoat          |
-remote: +------------------------------------------------------------------+
+remote: ╔══════════════════════════════════════════════════════════════════╗
+remote: ║ ⚠ RUN RISK: 100/100 (F) - DO NOT RUN THIS CODE                  ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
+remote: ║ 🚨 26 Critical    ⚠ 0 High    ℹ 4 Medium    - 0 Low              ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
+remote: ║ Full report: https://git.vet/r/54615e9b                          ║
+remote: ║ To clone: git clone https://github.com/baocin/known-malicious-repo ║
+remote: ╠══════════════════════════════════════════════════════════════════╣
+remote: ║ Questions? gitvet@steele.red • buymeacoffee.com/gitvet           ║
+remote: ╚══════════════════════════════════════════════════════════════════╝
 remote:
-fatal: Could not read from remote repository.
+fatal: bad object 54615e9b0b4df9ac4519937f5ccab429cff0a19d
 ```
 
-The `fatal` error is expected - git.vet intentionally fails the clone after showing the report (unless using `/clone/` mode).
+The `fatal` error is expected - git.vet shows the security report and then fails the clone to prevent downloading malicious code (unless using `/clone/` mode).
 
 ## How It Works
 
