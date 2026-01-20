@@ -676,10 +676,36 @@
             font-size: 1.1rem;
             display: inline-block;
             margin-top: 24px;
+            word-break: break-all;
+            max-width: 100%;
+            position: relative;
         }
 
         .cta-command .prompt {
             color: var(--green);
+        }
+
+        .copy-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            padding: 8px 16px;
+            background: var(--accent);
+            border: none;
+            border-radius: 6px;
+            color: var(--bg);
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: #79b8ff;
+        }
+
+        .copy-btn.copied {
+            background: var(--green);
         }
 
         /* Footer */
@@ -753,11 +779,11 @@
                         <span class="dim">git clone https://</span><span class="highlight">git.vet/</span><span class="original">github.com/owner/repo</span>
                     </div>
 
-                    <div class="transform-hint">└── <strong>just add this</strong></div>
+                    <div class="transform-hint">└── <strong>Add git.vet before your host</strong></div>
                 </div>
 
                 <div class="transform-box" style="margin-top: 24px;">
-                    <div class="transform-label">SSH format also works</div>
+                    <div class="transform-label">SSH Format for git.vet</div>
                     <div class="transform-url">
                         <span class="dim">git clone </span><span class="highlight">git@git.vet:</span><span class="original">github.com/owner/repo</span>
                     </div>
@@ -771,7 +797,63 @@
                     <div class="terminal-dot green"></div>
                     <span class="terminal-title">Terminal</span>
                 </div>
-                <div class="terminal-body"><div class="terminal-line"><span class="prompt">$</span> <span class="command">git clone https://<span class="highlight-green">git.vet/</span>github.com/OWASP/NodeGoat</span></div><div class="terminal-line">Cloning into 'NodeGoat'...</div><div class="terminal-line remote">remote: [git.vet] Preflight OK</div><div class="terminal-line remote">remote: ✓ Fetched. 111 files</div><div class="terminal-line remote">remote: ⠸ Scanning with opengrep...</div><div class="terminal-line remote">remote: ✓ Scan complete!</div><div class="terminal-line remote">remote:</div><div class="terminal-line remote">remote: ╔══════════════════════════════════════════════════╗</div><div class="terminal-line remote">remote: ║           GIT.VET SECURITY REPORT               ║</div><div class="terminal-line remote">remote: ║     Repository: github.com/OWASP/NodeGoat       ║</div><div class="terminal-line remote">remote: ╠══════════════════════════════════════════════════╣</div><div class="terminal-line remote">remote: ║   <span class="highlight-red">✗ 3 Critical</span>   <span class="highlight-yellow">⚠ 7 High</span>   <span class="highlight-blue">◆ 12 Medium</span>        ║</div><div class="terminal-line remote">remote: ╠══════════════════════════════════════════════════╣</div><div class="terminal-line remote">remote: ║   Full report: <span class="highlight-blue">https://git.vet/r/abc123</span>         ║</div><div class="terminal-line remote">remote: ╚══════════════════════════════════════════════════╝</div><div class="terminal-line"></div><div class="terminal-line">Clone proceeds only after you see results. Abort if it's sketchy.</div></div>
+                <div class="terminal-body"><div class="terminal-line"><span class="prompt">$</span> <span class="command">git clone https://<span class="highlight-green">git.vet/</span>github.com/OWASP/NodeGoat</span></div><div class="terminal-line">Cloning into 'NodeGoat'...</div><div class="terminal-line remote">remote: [git.vet] Preflight OK</div><div class="terminal-line remote">remote: ✓ Fetched. 111 files</div><div class="terminal-line remote">remote: ⠸ Scanning with opengrep...</div><div class="terminal-line remote">remote: ✓ Scan complete!</div><div class="terminal-line remote">remote:</div><div class="terminal-line remote">remote: ╔══════════════════════════════════════════════════╗</div><div class="terminal-line remote">remote: ║           GIT.VET SECURITY REPORT               ║</div><div class="terminal-line remote">remote: ║     Repository: github.com/OWASP/NodeGoat       ║</div><div class="terminal-line remote">remote: ╠══════════════════════════════════════════════════╣</div><div class="terminal-line remote">remote: ║   <span class="highlight-red">✗ 3 Critical</span>   <span class="highlight-yellow">⚠ 7 High</span>   <span class="highlight-blue">◆ 12 Medium</span>        ║</div><div class="terminal-line remote">remote: ╠══════════════════════════════════════════════════╣</div><div class="terminal-line remote">remote: ║   Full report: <span class="highlight-blue">https://git.vet/r/abc123</span>         ║</div><div class="terminal-line remote">remote: ╚══════════════════════════════════════════════════╝</div></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="features">
+        <div class="container">
+            <h2>Features</h2>
+            <p style="text-align: center; color: var(--text-muted); font-size: 1.1rem; max-width: 700px; margin: 0 auto 60px;">Scan before code touches your machine</p>
+            <div class="features-grid">
+                <div class="feature">
+                    <div class="feature-icon">📊</div>
+                    <h3>Beautiful Web Reports</h3>
+                    <p>Every scan generates a shareable web report with code snippets, severity breakdown, and remediation guidance.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🚀</div>
+                    <h3>Works everywhere git works</h3>
+                    <p>No CLI to install. No browser extension. No account. If your machine has git, it works.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Results stream in real-time</h3>
+                    <p>Findings appear in your terminal via git's sideband protocol. No waiting for a web page to load.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Powered by Opengrep</h3>
+                    <p>LGPL-licensed static analysis. Same rule format as semgrep, fully open source. <a href="https://github.com/opengrep/opengrep" target="_blank" rel="noopener" style="color: var(--accent);">View rules →</a></p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="trust">
+        <div class="container">
+            <h2>Questions</h2>
+            <div class="trust-points">
+                <div class="trust-point">
+                    <strong>Code never hits your disk until after the scan</strong>
+                    <p>Files are scanned in-transit before git writes anything to your filesystem.</p>
+                </div>
+                <div class="trust-point">
+                    <strong>We don't store repositories</strong>
+                    <p>Scanned in memory, immediately discarded. Nothing persisted.</p>
+                </div>
+                <div class="trust-point">
+                    <strong>Public repositories only (for now)</strong>
+                    <p>Private repo support is coming soon. Currently, git.vet only scans public repositories to protect people cloning random software.</p>
+                </div>
+                <div class="trust-point">
+                    <strong>Fully open source</strong>
+                    <p>Audit it yourself: <a href="https://github.com/baocin/gitscan" target="_blank" rel="noopener" style="color: var(--accent);">github.com/baocin/gitscan</a></p>
+                </div>
+            </div>
+            <div class="trust-selfhost">
+                <p>For the paranoid: <a href="https://github.com/baocin/gitscan#self-hosting" target="_blank" rel="noopener" style="color: var(--accent); font-weight: 600;">self-host it</a>. Same code, your infrastructure.</p>
             </div>
         </div>
     </section>
@@ -811,63 +893,6 @@
                 </tbody>
             </table>
             <p class="problem-callout">By the time you think to scan, it's already running.</p>
-        </div>
-    </section>
-
-    <section class="features">
-        <div class="container">
-            <h2>Why This Way</h2>
-            <p style="text-align: center; color: var(--text-muted); font-size: 1.1rem; max-width: 700px; margin: 0 auto 60px;">Zero friction by design</p>
-            <div class="features-grid">
-                <div class="feature">
-                    <div class="feature-icon">🚀</div>
-                    <h3>Works everywhere git works</h3>
-                    <p>No CLI to install. No browser extension. No account. If your machine has git, it works.</p>
-                </div>
-                <div class="feature">
-                    <div class="feature-icon">⚡</div>
-                    <h3>Results stream in real-time</h3>
-                    <p>Findings appear in your terminal via git's sideband protocol. No waiting for a web page to load.</p>
-                </div>
-                <div class="feature">
-                    <div class="feature-icon">🛡️</div>
-                    <h3>Powered by Opengrep</h3>
-                    <p>LGPL-licensed static analysis. Same rule format as semgrep, fully open source. <a href="https://github.com/opengrep/opengrep" target="_blank" rel="noopener" style="color: var(--accent);">View rules →</a></p>
-                </div>
-                <div class="feature">
-                    <div class="feature-icon">📊</div>
-                    <h3>Beautiful Web Reports</h3>
-                    <p>Every scan generates a shareable web report with code snippets, severity breakdown, and remediation guidance.</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section class="trust">
-        <div class="container">
-            <h2>"But I'm routing my clone through you..."</h2>
-            <p class="trust-intro">Yes. That's the point.</p>
-            <div class="trust-points">
-                <div class="trust-point">
-                    <strong>Code never hits your disk until after the scan</strong>
-                    <p>Files are scanned in-transit before git writes anything to your filesystem.</p>
-                </div>
-                <div class="trust-point">
-                    <strong>We don't store repositories</strong>
-                    <p>Scanned in memory, immediately discarded. Nothing persisted.</p>
-                </div>
-                <div class="trust-point">
-                    <strong>Credentials pass through</strong>
-                    <p>We never see your token, just forward it. Your authentication stays between you and the git host.</p>
-                </div>
-                <div class="trust-point">
-                    <strong>Fully open source</strong>
-                    <p>Audit it yourself: <a href="https://github.com/baocin/gitscan" target="_blank" rel="noopener" style="color: var(--accent);">github.com/baocin/gitscan</a></p>
-                </div>
-            </div>
-            <div class="trust-selfhost">
-                <p>For the paranoid: <a href="https://github.com/baocin/gitscan#self-hosting" target="_blank" rel="noopener" style="color: var(--accent); font-weight: 600;">self-host it</a>. Same code, your infrastructure.</p>
-            </div>
         </div>
     </section>
 
@@ -915,13 +940,30 @@
             </div>
 
             <p style="margin-top: 48px; color: var(--text-muted);">Or just run:</p>
-            <div class="cta-command">
+            <div class="cta-command" id="example-command">
+                <button class="copy-btn" onclick="copyExampleCommand()" id="example-copy-btn">Copy</button>
                 <span class="prompt">$</span> git clone https://<span class="highlight-green">git.vet/</span>github.com/OWASP/NodeGoat
             </div>
         </div>
     </section>
 
     <script>
+        function copyExampleCommand() {
+            const command = 'git clone https://git.vet/github.com/OWASP/NodeGoat';
+            const btn = document.getElementById('example-copy-btn');
+
+            navigator.clipboard.writeText(command).then(() => {
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = 'Copy';
+                    btn.classList.remove('copied');
+                }, 2000);
+            }).catch(() => {
+                // Clipboard failed
+            });
+        }
+
         function generateCloneCommand() {
             const input = document.getElementById('repo-url');
             const url = input.value.trim();

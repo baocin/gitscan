@@ -73,16 +73,6 @@ git.vet implements the git smart HTTP protocol and uses the sideband channel to 
 4. Streams results via git protocol sideband messages
 5. Intentionally fails the clone (or completes it in `/clone/` mode)
 
-## Private Repositories
-
-Private repos are supported but require a 10-second consent delay:
-
-```bash
-git clone https://username:token@git.vet/github.com/private/repo
-```
-
-Your code is deleted immediately after scanning.
-
 ## Self-Hosting
 
 ```bash
