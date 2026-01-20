@@ -47,7 +47,7 @@ rules:
 
   - id: dockerfile-add-url
     message: Dockerfile ADD fetches from URL - prefer COPY with explicit download
-    severity: INFO
+    severity: LOW
     metadata:
       category: info-leak
       cwe: "CWE-494: Download of Code Without Integrity Check"

@@ -92,7 +92,7 @@ rules:
 
   - id: dangerous-readme-pip-install
     message: README instructs running pip/python install commands - verify package source
-    severity: INFO
+    severity: LOW
     metadata:
       category: info-leak
       cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"

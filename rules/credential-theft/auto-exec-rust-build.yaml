@@ -56,7 +56,7 @@ rules:
 
   - id: rust-build-script-present
     message: Rust build.rs present - code executes automatically during cargo build (informational)
-    severity: INFO
+    severity: LOW
     metadata:
       category: info-leak
       cwe: "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
