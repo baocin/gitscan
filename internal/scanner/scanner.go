@@ -15,10 +15,11 @@ import (
 
 // Scanner wraps opengrep for static analysis
 type Scanner struct {
-	binaryPath string
-	rulesPath  string
-	timeout    time.Duration
-	scanLevel  ScanLevel
+	binaryPath   string
+	rulesPath    string
+	timeout      time.Duration
+	scanLevel    ScanLevel
+	infoLeakOnly bool // Filter to only info-leak findings
 }
 
 // ScanLevel defines the depth/thoroughness of scanning
@@ -32,10 +33,11 @@ const (
 
 // Config holds scanner configuration
 type Config struct {
-	BinaryPath string
-	RulesPath  string
-	Timeout    time.Duration
-	ScanLevel  ScanLevel
+	BinaryPath   string
+	RulesPath    string
+	Timeout      time.Duration
+	ScanLevel    ScanLevel
+	InfoLeakOnly bool // Only report info-leak findings (credential theft)
 }
 
 // DefaultConfig returns default scanner configuration
@@ -57,10 +59,11 @@ func New(cfg Config) *Scanner {
 		cfg.ScanLevel = ScanLevelNormal
 	}
 	return &Scanner{
-		binaryPath: cfg.BinaryPath,
-		rulesPath:  cfg.RulesPath,
-		timeout:    cfg.Timeout,
-		scanLevel:  cfg.ScanLevel,
+		binaryPath:   cfg.BinaryPath,
+		rulesPath:    cfg.RulesPath,
+		timeout:      cfg.Timeout,
+		scanLevel:    cfg.ScanLevel,
+		infoLeakOnly: cfg.InfoLeakOnly,
 	}
 }
 
@@ -76,6 +79,11 @@ func (s *Scanner) IsAvailable() (bool, string) {
 // GetBinaryPath returns the configured binary path
 func (s *Scanner) GetBinaryPath() string {
 	return s.binaryPath
+}
+
+// IsInfoLeakOnly returns whether scanner is in info-leak-only mode
+func (s *Scanner) IsInfoLeakOnly() bool {
+	return s.infoLeakOnly
 }
 
 // Progress represents scan progress
@@ -405,7 +413,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 		log.Printf("[scanner] Scan timed out after %v, attempting to parse partial results...", s.timeout)
 
 		if len(jsonOutput.String()) > 0 {
-			partialResult, parseErr := parseSARIFOutput(jsonOutput.String(), repoPath, totalFiles, startTime)
+			partialResult, parseErr := parseSARIFOutput(jsonOutput.String(), repoPath, totalFiles, startTime, s.infoLeakOnly)
 			if parseErr == nil && len(partialResult.Findings) > 0 {
 				// We got partial results! Return them with warning
 				partialResult.ScannerUsed = s.binaryPath
@@ -437,7 +445,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 				// (exit code 2 may be from cleanup/version check failures)
 				if stdoutStr != "" && strings.HasPrefix(stdoutStr, "{") {
 					// We have JSON output, try to parse it
-					if _, parseErr := parseSARIFOutput(stdoutStr, repoPath, totalFiles, startTime); parseErr == nil {
+					if _, parseErr := parseSARIFOutput(stdoutStr, repoPath, totalFiles, startTime, s.infoLeakOnly); parseErr == nil {
 						// Valid SARIF! Scan succeeded despite exit code 2
 						log.Printf("[scanner] Exit code 2 but valid SARIF output present, treating as success")
 						err = nil // Clear the error, proceed with normal parsing
@@ -483,7 +491,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 		log.Printf("[scanner] Raw output (first 500 chars): %s", jsonOutput.String()[:500])
 	}
 
-	result, err := parseSARIFOutput(jsonOutput.String(), repoPath, totalFiles, startTime)
+	result, err := parseSARIFOutput(jsonOutput.String(), repoPath, totalFiles, startTime, s.infoLeakOnly)
 	if err != nil {
 		log.Printf("[scanner] SARIF parse error: %v", err)
 		// If parsing fails, return basic result with empty findings
@@ -519,7 +527,7 @@ func (s *Scanner) mockScan(repoPath string, totalFiles int, startTime time.Time)
 }
 
 // parseSARIFOutput parses SARIF JSON output from opengrep
-func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime time.Time) (*Result, error) {
+func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime time.Time, infoLeakOnly bool) (*Result, error) {
 	if jsonStr == "" {
 		return &Result{
 			FilesScanned: totalFiles,
@@ -590,6 +598,25 @@ func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime
 				result.InfoCount++
 			}
 		}
+	}
+
+	// Filter to info-leak findings only if in info-leak-only mode
+	if infoLeakOnly {
+		filteredFindings := []Finding{}
+		for _, finding := range result.Findings {
+			if finding.Severity == "info-leak" {
+				filteredFindings = append(filteredFindings, finding)
+			}
+		}
+		result.Findings = filteredFindings
+
+		// Recalculate counts (zero out non-info-leak categories)
+		result.CriticalCount = 0
+		result.HighCount = 0
+		result.MediumCount = 0
+		result.LowCount = 0
+		result.InfoCount = 0
+		// InfoLeakCount stays as-is from the loop above
 	}
 
 	// Serialize findings to JSON for storage (not raw SARIF)

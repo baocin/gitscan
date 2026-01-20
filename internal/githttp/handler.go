@@ -697,13 +697,21 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 
 	// Severity counts on same line
 	report.WriteBoxMiddle(width)
-	summaryLine := fmt.Sprintf("%s %d Info Leak    %s %d Critical    %s %d High    %s %d Medium    %s %d Low",
-		sb.Color(Magenta, IconInfoLeak), scan.InfoLeakCount,
-		sb.Color(Red, IconCritical), scan.CriticalCount,
-		sb.Color(Yellow, IconHigh), scan.HighCount,
-		sb.Color(Blue, IconMedium), scan.MediumCount,
-		IconLow, scan.LowCount,
-	)
+	var summaryLine string
+	if h.scanner.IsInfoLeakOnly() {
+		// Info-leak only mode: show only info-leak count
+		summaryLine = fmt.Sprintf("%s %d Info Leak (credential theft detection only)",
+			sb.Color(Magenta, IconInfoLeak), scan.InfoLeakCount)
+	} else {
+		// Full scan mode: show all severity counts
+		summaryLine = fmt.Sprintf("%s %d Info Leak    %s %d Critical    %s %d High    %s %d Medium    %s %d Low",
+			sb.Color(Magenta, IconInfoLeak), scan.InfoLeakCount,
+			sb.Color(Red, IconCritical), scan.CriticalCount,
+			sb.Color(Yellow, IconHigh), scan.HighCount,
+			sb.Color(Blue, IconMedium), scan.MediumCount,
+			IconLow, scan.LowCount,
+		)
+	}
 	report.WriteBoxLine(summaryLine, width)
 
 	// Report URL

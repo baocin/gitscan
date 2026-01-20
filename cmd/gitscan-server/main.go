@@ -50,6 +50,7 @@ func main() {
 		resetDB           = flag.Bool("reset-db", true, "Reset database on startup (default: true)")
 		showVersion       = flag.Bool("version", false, "Show version and exit")
 		allowCustomHosts  = flag.Bool("allow-custom-hosts", false, "Allow custom git hosts (self-hosted repos). Default: only github.com, gitlab.com, bitbucket.org")
+		infoLeakOnly      = flag.Bool("info-leak-only", false, "Only scan for credential theft patterns (9x faster, focuses on malicious code)")
 	)
 	flag.Parse()
 
@@ -90,11 +91,16 @@ func main() {
 	scannerCfg.BinaryPath = *openGrepPath
 	scannerCfg.RulesPath = *rulesPath
 	scannerCfg.Timeout = time.Duration(*scanTimeout) * time.Second
+	scannerCfg.InfoLeakOnly = *infoLeakOnly
 	scan := scanner.New(scannerCfg)
 
 	// Check if scanner is available
 	if available, path := scan.IsAvailable(); available {
-		log.Printf("Scanner initialized: %s (found at %s, timeout: %ds)", *openGrepPath, path, *scanTimeout)
+		mode := "full security scan"
+		if *infoLeakOnly {
+			mode = "info-leak only (credential theft detection, 9x faster)"
+		}
+		log.Printf("Scanner initialized: %s (found at %s, timeout: %ds, mode: %s)", *openGrepPath, path, *scanTimeout, mode)
 	} else {
 		log.Printf("WARNING: Scanner binary '%s' not found in PATH - scans will fail!", *openGrepPath)
 	}
