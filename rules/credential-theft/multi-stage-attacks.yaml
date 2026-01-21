@@ -1,0 +1,372 @@
+rules:
+  - id: download-then-execute-bash
+    message: Downloading and executing script - potential multi-stage attack
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+    languages: [bash, sh]
+    patterns:
+      - pattern-either:
+          # curl | bash patterns
+          - pattern: curl ... | bash
+          - pattern: curl ... | sh
+          - pattern: curl ... | bash -s ...
+          - pattern: curl ... | /bin/bash
+          - pattern: curl ... | /bin/sh
+
+          # wget | bash patterns
+          - pattern: wget ... -O- | bash
+          - pattern: wget ... -O- | sh
+          - pattern: wget ... -qO- | bash
+          - pattern: wget ... --quiet -O- | bash
+
+          # curl download then execute
+          - pattern: curl ... -o ... && bash ...
+          - pattern: curl ... -o ... && sh ...
+          - pattern: curl ... > ... && bash ...
+          - pattern: wget ... -O ... && bash ...
+          - pattern: wget ... && bash ...
+
+          # eval with curl
+          - pattern: eval "$(curl ...)"
+          - pattern: eval $(curl ...)
+
+  - id: download-then-execute-js
+    message: Downloading and executing code - potential multi-stage attack
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Fetch then eval
+          - pattern: |
+              fetch($URL)
+              ...
+              eval($CODE)
+          - pattern: |
+              $RESP = await fetch($URL)
+              ...
+              $CODE = await $RESP.text()
+              ...
+              eval($CODE)
+
+          # axios then eval
+          - pattern: |
+              axios.get($URL)
+              ...
+              eval($CODE)
+
+          # Fetch then Function constructor
+          - pattern: |
+              fetch($URL)
+              ...
+              new Function($CODE)
+
+          # require with http/https URL
+          - pattern: |
+              require("=~/^https?:\\/\\//")
+
+  - id: download-then-execute-python
+    message: Downloading and executing code - potential multi-stage attack
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: MEDIUM
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # urllib then exec
+          - pattern: |
+              $RESP = urllib.request.urlopen($URL)
+              ...
+              $CODE = $RESP.read()
+              ...
+              exec($CODE)
+
+          # requests then exec
+          - pattern: |
+              $RESP = requests.get($URL)
+              ...
+              exec($RESP.text)
+          - pattern: |
+              $RESP = requests.get($URL)
+              ...
+              exec($RESP.content)
+
+          # requests then eval
+          - pattern: |
+              $RESP = requests.get($URL)
+              ...
+              eval($RESP.text)
+
+          # compile then exec from network
+          - pattern: |
+              $RESP = requests.get($URL)
+              ...
+              $CODE = compile($RESP.text, ...)
+              ...
+              exec($CODE)
+
+  - id: encrypted-payload-decrypt-execute-js
+    message: Decrypting and executing payload - potential obfuscated multi-stage attack
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: LOW
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Decrypt then eval
+          - pattern: |
+              $DECRYPTED = crypto.decrypt($ENCRYPTED, ...)
+              ...
+              eval($DECRYPTED)
+          - pattern: |
+              $DECRYPTED = CryptoJS.AES.decrypt($ENCRYPTED, ...)
+              ...
+              eval($DECRYPTED.toString())
+
+          # Base64 decode then eval
+          - pattern: |
+              $CODE = Buffer.from($ENCODED, 'base64').toString()
+              ...
+              eval($CODE)
+          - pattern: |
+              $CODE = atob($ENCODED)
+              ...
+              eval($CODE)
+
+  - id: encrypted-payload-decrypt-execute-python
+    message: Decrypting and executing payload - potential obfuscated multi-stage attack
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: LOW
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Decrypt then exec
+          - pattern: |
+              $DECRYPTED = $CIPHER.decrypt($ENCRYPTED)
+              ...
+              exec($DECRYPTED)
+
+          # Base64 decode then exec
+          - pattern: |
+              $CODE = base64.b64decode($ENCODED)
+              ...
+              exec($CODE)
+          - pattern: |
+              $CODE = base64.b64decode($ENCODED).decode()
+              ...
+              exec($CODE)
+
+  - id: remote-config-fetch-js
+    message: Fetching remote configuration that may contain malicious code
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: LOW
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Fetch config then use in require/import
+          - pattern: |
+              $CONFIG = await fetch($URL)
+              ...
+              require($CONFIG)
+
+          # Fetch JSON config with code strings
+          - pattern: |
+              $CONFIG = await fetch($URL).then($R => $R.json())
+              ...
+              eval($CONFIG.code)
+
+  - id: remote-config-fetch-python
+    message: Fetching remote configuration that may contain malicious code
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: LOW
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Fetch JSON config then exec
+          - pattern: |
+              $RESP = requests.get($URL)
+              ...
+              $CONFIG = $RESP.json()
+              ...
+              exec($CONFIG[...])
+
+          # Load YAML from URL then use
+          - pattern: |
+              $RESP = requests.get($URL)
+              ...
+              $CONFIG = yaml.load($RESP.text)
+              ...
+              exec(...)
+
+  - id: conditional-time-based-execution-js
+    message: Time-based conditional execution - potential delayed attack
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: LOW
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # setTimeout with credential access
+          - pattern: |
+              setTimeout(() => {
+                  ...
+                  fs.readFileSync("=~/.ssh/")
+                  ...
+              }, ...)
+
+          # setInterval with network exfil
+          - pattern: |
+              setInterval(() => {
+                  ...
+                  fetch($URL, ...)
+                  ...
+              }, ...)
+
+  - id: conditional-env-based-execution-js
+    message: Execution conditional on environment - potential targeted attack
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: LOW
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Only execute in CI
+          - pattern: |
+              if (process.env.CI) {
+                  ...
+                  fs.readFileSync("=~/.ssh/")
+                  ...
+              }
+
+          # Only execute in production
+          - pattern: |
+              if (process.env.NODE_ENV === 'production') {
+                  ...
+                  fetch($URL, ...)
+                  ...
+              }
+
+  - id: conditional-env-based-execution-python
+    message: Execution conditional on environment - potential targeted attack
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: LOW
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Only execute in CI
+          - pattern: |
+              if os.environ.get('CI'):
+                  ...
+                  open(os.path.expanduser("~/.ssh/id_rsa"))
+                  ...
+
+          # Only execute based on hostname
+          - pattern: |
+              if socket.gethostname() == ...:
+                  ...
+                  requests.post($URL, ...)
+                  ...
+
+  - id: staged-script-download-js
+    message: Multi-stage script download pattern - potential progressive attack
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Download script A, which downloads script B
+          - pattern: |
+              fetch($URL1)
+              ...
+              fetch($URL2)
+              ...
+              eval($CODE)
+
+  - id: persistence-file-modification-js
+    message: Modifying files for persistence - potential long-term compromise
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Writing to package.json scripts
+          - pattern: |
+              $PKG = require('./package.json')
+              ...
+              $PKG.scripts = ...
+              ...
+              fs.writeFileSync('package.json', ...)
+
+          # Modifying .bashrc, .zshrc
+          - pattern: |
+              fs.appendFileSync("=~/.bashrc/", ...)
+          - pattern: |
+              fs.appendFileSync("=~/.zshrc/", ...)
+
+  - id: persistence-file-modification-python
+    message: Modifying files for persistence - potential long-term compromise
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-506: Embedded Malicious Code"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: MEDIUM
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Modifying shell rc files
+          - pattern: |
+              with open(os.path.expanduser("~/.bashrc"), "a") as $F:
+                  ...
+          - pattern: |
+              with open(os.path.expanduser("~/.zshrc"), "a") as $F:
+                  ...
+
+          # Modifying Python startup files
+          - pattern: |
+              with open(os.path.expanduser("~/.pythonrc"), "w") as $F:
+                  ...

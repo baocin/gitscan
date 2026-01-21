@@ -1,0 +1,235 @@
+rules:
+  - id: glob-pattern-credential-search-js
+    message: Using glob patterns to search for credential files - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Glob patterns for SSH keys
+          - pattern: |
+              glob(".../.ssh/id_*")
+          - pattern: |
+              glob(".../.ssh/*")
+          - pattern: |
+              glob.sync(".../.ssh/id_*")
+          - pattern: |
+              glob.sync(".../.ssh/*")
+
+          # Glob patterns for AWS credentials
+          - pattern: |
+              glob(".../.aws/*")
+          - pattern: |
+              glob.sync(".../.aws/*")
+
+          # Glob patterns for .env files
+          - pattern: |
+              glob(".../.env*")
+          - pattern: |
+              glob("**/.env*")
+          - pattern: |
+              glob.sync("**/.env*")
+
+          # Glob patterns for private keys
+          - pattern: |
+              glob(".../*.pem")
+          - pattern: |
+              glob(".../*.key")
+          - pattern: |
+              glob("**/*.pem")
+          - pattern: |
+              glob("**/*.key")
+
+  - id: glob-pattern-credential-search-python
+    message: Using glob patterns to search for credential files - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # glob.glob patterns for SSH keys
+          - pattern: |
+              glob.glob(".../.ssh/id_*")
+          - pattern: |
+              glob.glob(".../.ssh/*")
+          - pattern: |
+              glob.glob(os.path.expanduser("~/.ssh/id_*"))
+          - pattern: |
+              glob.glob(os.path.expanduser("~/.ssh/*"))
+
+          # glob.glob patterns for AWS credentials
+          - pattern: |
+              glob.glob(".../.aws/*")
+          - pattern: |
+              glob.glob(os.path.expanduser("~/.aws/*"))
+
+          # glob.glob patterns for .env files
+          - pattern: |
+              glob.glob("**/.env*")
+          - pattern: |
+              glob.glob(".../.env*")
+
+          # pathlib glob patterns
+          - pattern: |
+              Path(...).glob(".ssh/id_*")
+          - pattern: |
+              Path(...).glob("**/.ssh/id_*")
+          - pattern: |
+              Path.home().glob(".ssh/id_*")
+          - pattern: |
+              Path(...).rglob("id_*")
+          - pattern: |
+              Path(...).rglob(".env*")
+          - pattern: |
+              Path(...).rglob("*.pem")
+          - pattern: |
+              Path(...).rglob("*.key")
+
+  - id: directory-walk-credential-search-python
+    message: Walking directory tree searching for credential files - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # os.walk searching for sensitive files
+          - pattern: |
+              for $ROOT, $DIRS, $FILES in os.walk(...):
+                  ...
+                  for $FILE in $FILES:
+                      ...
+                      if "id_rsa" in $FILE:
+                          ...
+          - pattern: |
+              for $ROOT, $DIRS, $FILES in os.walk(...):
+                  ...
+                  for $FILE in $FILES:
+                      ...
+                      if "id_dsa" in $FILE:
+                          ...
+          - pattern: |
+              for $ROOT, $DIRS, $FILES in os.walk(...):
+                  ...
+                  for $FILE in $FILES:
+                      ...
+                      if "id_ecdsa" in $FILE:
+                          ...
+          - pattern: |
+              for $ROOT, $DIRS, $FILES in os.walk(...):
+                  ...
+                  for $FILE in $FILES:
+                      ...
+                      if "credentials" in $FILE:
+                          ...
+          - pattern: |
+              for $ROOT, $DIRS, $FILES in os.walk(...):
+                  ...
+                  for $FILE in $FILES:
+                      ...
+                      if ".env" in $FILE:
+                          ...
+          - pattern: |
+              for $ROOT, $DIRS, $FILES in os.walk(...):
+                  ...
+                  for $FILE in $FILES:
+                      ...
+                      if $FILE.endswith(".pem"):
+                          ...
+          - pattern: |
+              for $ROOT, $DIRS, $FILES in os.walk(...):
+                  ...
+                  for $FILE in $FILES:
+                      ...
+                      if $FILE.endswith(".key"):
+                          ...
+
+  - id: directory-walk-credential-search-js
+    message: Walking directory tree searching for credential files - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # fs.readdirSync with filtering for credentials
+          - pattern: |
+              $FILES = fs.readdirSync(...)
+              ...
+              $FILES.forEach($FILE => {
+                  ...
+                  if ($FILE.includes('.ssh')) {
+                      ...
+                  }
+              })
+          - pattern: |
+              $FILES = fs.readdirSync(...)
+              ...
+              $FILES.filter($FILE => $FILE.includes('id_rsa'))
+          - pattern: |
+              $FILES = fs.readdirSync(...)
+              ...
+              $FILES.filter($FILE => $FILE.includes('credentials'))
+          - pattern: |
+              $FILES = fs.readdirSync(...)
+              ...
+              $FILES.filter($FILE => $FILE.endsWith('.pem'))
+          - pattern: |
+              $FILES = fs.readdirSync(...)
+              ...
+              $FILES.filter($FILE => $FILE.endsWith('.key'))
+
+  - id: relative-path-traversal-credentials
+    message: Path traversal attempting to access credential files - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # Relative path traversal to .ssh
+          - pattern: |
+              "../../.ssh/id_rsa"
+          - pattern: |
+              "../.ssh/id_rsa"
+          - pattern: |
+              "../../.ssh/id_dsa"
+          - pattern: |
+              "../../.ssh/id_ecdsa"
+          - pattern: |
+              "../../.ssh/id_ed25519"
+
+          # Relative path traversal to .aws
+          - pattern: |
+              "../../.aws/credentials"
+          - pattern: |
+              "../.aws/credentials"
+          - pattern: |
+              "../../.aws/config"
+
+          # Relative path traversal in operations
+          - pattern: |
+              fs.readFileSync("=~/\\.\\./.*\\.ssh/")
+          - pattern: |
+              fs.readFileSync("=~/\\.\\./.*\\.aws/")
+          - pattern: |
+              open("=~/\\.\\./.*\\.ssh/")
+          - pattern: |
+              open("=~/\\.\\./.*\\.aws/")

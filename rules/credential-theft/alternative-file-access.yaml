@@ -1,0 +1,192 @@
+rules:
+  - id: alternative-file-read-stream-js
+    message: Using createReadStream on credential files - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # createReadStream on SSH keys
+          - pattern: |
+              fs.createReadStream("=~/.ssh/id_rsa/")
+          - pattern: |
+              fs.createReadStream("=~/.ssh/id_dsa/")
+          - pattern: |
+              fs.createReadStream("=~/.ssh/id_ecdsa/")
+          - pattern: |
+              fs.createReadStream("=~/.ssh/id_ed25519/")
+
+          # createReadStream on AWS credentials
+          - pattern: |
+              fs.createReadStream("=~/.aws/credentials/")
+          - pattern: |
+              fs.createReadStream("=~/.aws/config/")
+
+          # createReadStream on other credentials
+          - pattern: |
+              fs.createReadStream("=~/.npmrc/")
+          - pattern: |
+              fs.createReadStream("=~/.docker/config.json/")
+          - pattern: |
+              fs.createReadStream("=~/.kube/config/")
+
+  - id: alternative-file-open-sync-js
+    message: Using openSync/readSync on credential files - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # openSync patterns
+          - pattern: |
+              $FD = fs.openSync("=~/.ssh/", ...)
+          - pattern: |
+              $FD = fs.openSync("=~/.aws/", ...)
+          - pattern: |
+              $FD = fs.openSync("=~/.npmrc/", ...)
+
+  - id: alternative-file-promises-js
+    message: Using fs.promises or fs/promises on credential files - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # fs.promises.readFile
+          - pattern: |
+              fs.promises.readFile("=~/.ssh/")
+          - pattern: |
+              fs.promises.readFile("=~/.aws/")
+          - pattern: |
+              fs.promises.readFile("=~/.npmrc/")
+
+          # require('fs/promises')
+          - pattern: |
+              $FSP = require('fs/promises')
+              ...
+              $FSP.readFile("=~/.ssh/")
+          - pattern: |
+              $FSP = require('fs/promises')
+              ...
+              $FSP.readFile("=~/.aws/")
+
+          # await readFile from fs/promises
+          - pattern: |
+              import { readFile } from 'fs/promises'
+              ...
+              readFile("=~/.ssh/")
+          - pattern: |
+              import { readFile } from 'fs/promises'
+              ...
+              readFile("=~/.aws/")
+
+  - id: alternative-path-read-methods-python
+    message: Using pathlib Path.read_text/read_bytes on credential files - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Path.read_text() on SSH keys
+          - pattern: |
+              Path(os.path.expanduser("~/.ssh/id_rsa")).read_text()
+          - pattern: |
+              Path(os.path.expanduser("~/.ssh/id_dsa")).read_text()
+          - pattern: |
+              Path(os.path.expanduser("~/.ssh/id_ecdsa")).read_text()
+          - pattern: |
+              Path(os.path.expanduser("~/.ssh/id_ed25519")).read_text()
+
+          # Path.read_bytes()
+          - pattern: |
+              Path(os.path.expanduser("~/.ssh/id_rsa")).read_bytes()
+          - pattern: |
+              Path(os.path.expanduser("~/.aws/credentials")).read_bytes()
+
+          # Path.read_text() on AWS
+          - pattern: |
+              Path(os.path.expanduser("~/.aws/credentials")).read_text()
+          - pattern: |
+              Path(os.path.expanduser("~/.aws/config")).read_text()
+
+          # Path.read_text() on other credentials
+          - pattern: |
+              Path(os.path.expanduser("~/.npmrc")).read_text()
+          - pattern: |
+              Path(os.path.expanduser("~/.docker/config.json")).read_text()
+          - pattern: |
+              Path(os.path.expanduser("~/.kube/config")).read_text()
+
+          # Using Path.home() directly
+          - pattern: |
+              (Path.home() / ".ssh" / "id_rsa").read_text()
+          - pattern: |
+              (Path.home() / ".ssh" / "id_dsa").read_text()
+          - pattern: |
+              (Path.home() / ".ssh" / "id_ecdsa").read_text()
+          - pattern: |
+              (Path.home() / ".ssh" / "id_ed25519").read_text()
+          - pattern: |
+              (Path.home() / ".aws" / "credentials").read_text()
+          - pattern: |
+              (Path.home() / ".aws" / "config").read_text()
+
+  - id: io-module-file-read-python
+    message: Using io.open() on credential files - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # io.open patterns
+          - pattern: |
+              io.open(os.path.expanduser("~/.ssh/id_rsa"), ...)
+          - pattern: |
+              io.open(os.path.expanduser("~/.ssh/id_dsa"), ...)
+          - pattern: |
+              io.open(os.path.expanduser("~/.ssh/id_ecdsa"), ...)
+          - pattern: |
+              io.open(os.path.expanduser("~/.ssh/id_ed25519"), ...)
+          - pattern: |
+              io.open(os.path.expanduser("~/.aws/credentials"), ...)
+          - pattern: |
+              io.open(os.path.expanduser("~/.aws/config"), ...)
+
+  - id: alternative-require-json-js
+    message: Using require() to load potentially sensitive JSON files
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # require() on config files
+          - pattern: |
+              require("=~/.docker/config.json/")
+          - pattern: |
+              require(... + ".docker/config.json")
+          - pattern: |
+              require(... + "config.json")

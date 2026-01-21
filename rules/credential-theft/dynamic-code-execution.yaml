@@ -1,0 +1,261 @@
+rules:
+  - id: eval-with-credential-paths-js
+    message: Using eval() with credential-related strings - potential obfuscated credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # eval with credential paths
+          - pattern: |
+              eval("=~/.ssh/")
+          - pattern: |
+              eval("=~/.aws/")
+          - pattern: |
+              eval("=~/id_rsa/")
+          - pattern: |
+              eval("=~/credentials/")
+
+          # eval with fs operations
+          - pattern: |
+              eval("=~/fs.readFileSync/")
+          - pattern: |
+              eval("=~/fs.readFile/")
+
+          # eval with process.env
+          - pattern: |
+              eval("=~/process.env/")
+
+  - id: function-constructor-credential-access-js
+    message: Using Function constructor with credential-related code - potential obfuscated credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Function constructor
+          - pattern: |
+              new Function("=~/.ssh/")
+          - pattern: |
+              new Function("=~/.aws/")
+          - pattern: |
+              new Function("=~/readFileSync/")
+          - pattern: |
+              Function("=~/process.env/")
+
+  - id: vm-run-credential-access-js
+    message: Using vm.runInContext with credential access - potential obfuscated credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # vm.runInContext/runInThisContext
+          - pattern: |
+              vm.runInContext("=~/.ssh/", ...)
+          - pattern: |
+              vm.runInContext("=~/.aws/", ...)
+          - pattern: |
+              vm.runInThisContext("=~/readFileSync/")
+          - pattern: |
+              vm.runInNewContext("=~/process.env/", ...)
+
+  - id: exec-with-credential-paths-python
+    message: Using exec() with credential-related strings - potential obfuscated credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # exec with credential paths
+          - pattern: |
+              exec("=~/.ssh/")
+          - pattern: |
+              exec("=~/.aws/")
+          - pattern: |
+              exec("=~/id_rsa/")
+          - pattern: |
+              exec("=~/credentials/")
+
+          # exec with file operations
+          - pattern: |
+              exec("=~/open\\(/")
+
+  - id: eval-with-credential-paths-python
+    message: Using eval() with credential-related strings - potential obfuscated credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # eval with credential paths
+          - pattern: |
+              eval("=~/.ssh/")
+          - pattern: |
+              eval("=~/.aws/")
+          - pattern: |
+              eval("=~/open\\(/")
+          - pattern: |
+              eval("=~/os.environ/")
+
+  - id: compile-exec-credential-access-python
+    message: Using compile()+exec() pattern with credential access - potential obfuscated credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # compile + exec
+          - pattern: |
+              $CODE = compile($SOURCE, ...)
+              ...
+              exec($CODE)
+
+  - id: dynamic-import-credential-paths-js
+    message: Dynamic import with potentially credential-related paths - suspicious behavior
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Dynamic import with variable path
+          - pattern: |
+              import($PATH)
+          - pattern: |
+              require($PATH)
+      - metavariable-pattern:
+          metavariable: $PATH
+          patterns:
+            - pattern-not: |
+                "..."
+
+  - id: dynamic-require-json-credentials-js
+    message: Dynamically requiring JSON files that may contain credentials
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: LOW
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Dynamic require with .json
+          - pattern: |
+              require($PATH + ".json")
+          - pattern: |
+              require($PATH + "/config.json")
+
+  - id: importlib-dynamic-import-python
+    message: Dynamic import using importlib - potential code obfuscation
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # importlib.import_module with variable
+          - pattern: |
+              importlib.import_module($MODULE)
+          - pattern: |
+              importlib.__import__($MODULE)
+
+  - id: subprocess-with-shell-credential-access-python
+    message: Subprocess with shell=True accessing credentials - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # subprocess.run with shell and credential paths
+          - pattern: |
+              subprocess.run("=~/.ssh/", shell=True, ...)
+          - pattern: |
+              subprocess.run("=~/.aws/", shell=True, ...)
+          - pattern: |
+              subprocess.Popen("=~/.ssh/", shell=True, ...)
+          - pattern: |
+              subprocess.call("=~/cat.*\\.ssh/", shell=True, ...)
+
+  - id: child-process-exec-credential-access-js
+    message: Child process execution accessing credentials - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # child_process.exec with credential paths
+          - pattern: |
+              child_process.exec("=~/cat.*\\.ssh/", ...)
+          - pattern: |
+              child_process.exec("=~/cat.*\\.aws/", ...)
+          - pattern: |
+              exec("=~/cat.*\\.ssh/", ...)
+
+          # execSync
+          - pattern: |
+              child_process.execSync("=~/cat.*\\.ssh/")
+          - pattern: |
+              child_process.execSync("=~/cat.*\\.aws/")
+          - pattern: |
+              execSync("=~/cat.*\\.ssh/")
+
+  - id: os-system-credential-access-python
+    message: Using os.system() to access credentials - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # os.system with credential paths
+          - pattern: |
+              os.system("=~/cat.*\\.ssh/")
+          - pattern: |
+              os.system("=~/cat.*\\.aws/")
+          - pattern: |
+              os.system("=~/cat.*id_rsa/")
+          - pattern: |
+              os.system("=~/cat.*credentials/")

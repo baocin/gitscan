@@ -1,0 +1,170 @@
+rules:
+  - id: obfuscated-credential-path-concat-js
+    message: String concatenation building sensitive credential paths - possible evasion technique
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # SSH key path concatenation
+          - pattern: |
+              "..." + ".ssh" + ...
+          - pattern: |
+              "..." + "id_rsa" + ...
+          - pattern: |
+              "..." + "id_dsa" + ...
+          - pattern: |
+              "..." + "id_ecdsa" + ...
+          - pattern: |
+              "..." + "id_ed25519" + ...
+
+          # AWS credential path concatenation
+          - pattern: |
+              "..." + ".aws" + ...
+          - pattern: |
+              "..." + "credentials" + ...
+
+          # Browser cookie path concatenation
+          - pattern: |
+              "..." + "Cookies" + ...
+          - pattern: |
+              "..." + "Chrome" + ... + "Default" + ...
+          - pattern: |
+              "..." + "firefox" + ... + "cookies.sqlite" + ...
+
+          # Crypto wallet path concatenation
+          - pattern: |
+              "..." + ".bitcoin" + ...
+          - pattern: |
+              "..." + "wallet.dat" + ...
+          - pattern: |
+              "..." + ".ethereum" + ...
+          - pattern: |
+              "..." + "keystore" + ...
+
+  - id: obfuscated-credential-path-template-js
+    message: Template literal constructing sensitive credential paths - possible evasion technique
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Template literals with HOME environment variable
+          - pattern: |
+              `${process.env.HOME}/.ssh/$KEY`
+          - pattern: |
+              `${process.env.HOME}/.aws/credentials`
+          - pattern: |
+              `${process.env.HOME}/.aws/config`
+          - pattern: |
+              `${process.env.HOME}/.npmrc`
+          - pattern: |
+              `${process.env.HOME}/.docker/config.json`
+          - pattern: |
+              `${process.env.HOME}/.kube/config`
+          - pattern: |
+              `${process.env.HOME}/.git-credentials`
+
+          # Template literals with os.homedir()
+          - pattern: |
+              `${os.homedir()}/.ssh/$KEY`
+          - pattern: |
+              `${os.homedir()}/.aws/credentials`
+          - pattern: |
+              `${os.homedir()}/.npmrc`
+
+  - id: obfuscated-credential-path-array-join-js
+    message: Array join constructing sensitive credential paths - possible evasion technique
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Array join patterns for paths
+          - pattern: |
+              [..., ".ssh", ...].join(...)
+          - pattern: |
+              [..., "id_rsa", ...].join(...)
+          - pattern: |
+              [..., ".aws", "credentials"].join(...)
+          - pattern: |
+              [..., ".aws", "config"].join(...)
+          - pattern: |
+              [..., "Cookies"].join(...)
+          - pattern: |
+              [..., "wallet.dat"].join(...)
+          - pattern: |
+              [..., ".npmrc"].join(...)
+          - pattern: |
+              [..., ".docker", ...].join(...)
+          - pattern: |
+              [..., ".kube", "config"].join(...)
+
+  - id: base64-encoded-credential-paths-js
+    message: Base64 decoding potentially obfuscating credential file paths
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: LOW
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Base64 decode followed by file operations
+          - pattern: |
+              $PATH = Buffer.from($ENCODED, 'base64').toString()
+              ...
+              fs.readFileSync($PATH, ...)
+          - pattern: |
+              $PATH = atob($ENCODED)
+              ...
+              fs.readFileSync($PATH, ...)
+          - pattern: |
+              $PATH = Buffer.from($ENCODED, 'base64').toString()
+              ...
+              fs.readFile($PATH, ...)
+
+  - id: dynamic-property-credential-access-js
+    message: Dynamic property access on process.env for credentials - possible evasion
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: LOW
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Computed property access on process.env
+          - pattern: |
+              process.env[$KEY]
+          - pattern: |
+              process.env["AWS" + ...]
+          - pattern: |
+              process.env[... + "SECRET" + ...]
+          - pattern: |
+              process.env[... + "TOKEN" + ...]
+          - pattern: |
+              process.env[... + "KEY" + ...]
+      - metavariable-pattern:
+          metavariable: $KEY
+          patterns:
+            - pattern-not: |
+                "NODE_ENV"
+            - pattern-not: |
+                "PATH"
+            - pattern-not: |
+                "PWD"

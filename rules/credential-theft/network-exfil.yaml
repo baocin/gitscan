@@ -73,3 +73,183 @@ rules:
                 # Any URL variable (catch-all for POST with any URL)
                 - pattern: $EXFIL_URL
                 - pattern: $STEAL_URL
+
+  - id: websocket-exfiltration
+    message: WebSocket connection potentially used for data exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # JavaScript WebSocket
+          - pattern: |
+              $WS = new WebSocket($URL)
+              ...
+              $WS.send($DATA)
+          - pattern: |
+              new WebSocket($URL).send($DATA)
+
+          # Python websocket
+          - pattern: |
+              $WS = websocket.WebSocket()
+              ...
+              $WS.send($DATA)
+          - pattern: |
+              websocket.send($DATA)
+
+  - id: cloud-storage-exfiltration
+    message: Uploading data to cloud storage API - potential credential exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # AWS S3 uploads
+          - pattern: |
+              s3.putObject({..., Body: $DATA, ...})
+          - pattern: |
+              s3.upload({..., Body: $DATA, ...})
+          - pattern: |
+              s3_client.put_object(..., Body=$DATA, ...)
+          - pattern: |
+              s3_client.upload_file($FILE, ...)
+
+          # Google Cloud Storage
+          - pattern: |
+              bucket.upload($FILE, ...)
+          - pattern: |
+              blob.upload_from_string($DATA)
+          - pattern: |
+              blob.upload_from_filename($FILE)
+
+          # Azure Blob Storage
+          - pattern: |
+              blob_client.upload_blob($DATA, ...)
+
+  - id: webhook-exfiltration
+    message: Sending data to webhook URL - potential credential exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # Discord webhooks
+          - pattern: |
+              fetch("=~/discord.com\\/api\\/webhooks/", ...)
+          - pattern: |
+              axios.post("=~/discord.com\\/api\\/webhooks/", ...)
+          - pattern: |
+              requests.post("=~/discord.com/api/webhooks/", ...)
+
+          # Slack webhooks
+          - pattern: |
+              fetch("=~/hooks.slack.com/", ...)
+          - pattern: |
+              axios.post("=~/hooks.slack.com/", ...)
+          - pattern: |
+              requests.post("=~/hooks.slack.com/", ...)
+
+          # Generic webhook patterns
+          - pattern: |
+              fetch("=~/webhook/", ...)
+          - pattern: |
+              axios.post("=~/webhook/", ...)
+          - pattern: |
+              requests.post("=~/webhook/", ...)
+
+  - id: pastebin-exfiltration
+    message: Uploading data to pastebin/gist service - potential credential exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # Pastebin
+          - pattern: |
+              fetch("=~/pastebin.com/", ...)
+          - pattern: |
+              axios.post("=~/pastebin.com/", ...)
+          - pattern: |
+              requests.post("=~/pastebin.com/", ...)
+
+          # GitHub Gist
+          - pattern: |
+              fetch("=~/api.github.com\\/gists/", ...)
+          - pattern: |
+              axios.post("=~/api.github.com\\/gists/", ...)
+          - pattern: |
+              requests.post("=~/api.github.com/gists/", ...)
+
+          # dpaste, paste.ee, etc
+          - pattern: |
+              fetch("=~/dpaste/", ...)
+          - pattern: |
+              fetch("=~/paste\\.ee/", ...)
+
+  - id: http-get-exfiltration
+    message: HTTP GET request with data in URL/params - potential credential exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # JavaScript GET with params
+          - pattern: |
+              fetch($URL + "?" + ..., ...)
+          - pattern: |
+              axios.get($URL, { params: $DATA })
+          - pattern: |
+              axios.get($URL + "?" + ...)
+
+          # Python GET with params
+          - pattern: |
+              requests.get($URL, params=$DATA)
+          - pattern: |
+              urllib.request.urlopen($URL + "?" + ...)
+
+  - id: alternative-http-methods-exfiltration
+    message: Using PUT/PATCH HTTP methods for potential data exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # PUT requests
+          - pattern: |
+              fetch($URL, { method: 'PUT', ..., body: $DATA, ... })
+          - pattern: |
+              axios.put($URL, $DATA)
+          - pattern: |
+              requests.put($URL, ...)
+
+          # PATCH requests
+          - pattern: |
+              fetch($URL, { method: 'PATCH', ..., body: $DATA, ... })
+          - pattern: |
+              axios.patch($URL, $DATA)
+          - pattern: |
+              requests.patch($URL, ...)

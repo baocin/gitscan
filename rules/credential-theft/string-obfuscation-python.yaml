@@ -1,0 +1,153 @@
+rules:
+  - id: obfuscated-credential-path-concat-python
+    message: String concatenation or f-string building sensitive credential paths - possible evasion technique
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # F-string patterns with os.environ
+          - pattern: |
+              f"{os.environ['HOME']}/.ssh/{$KEY}"
+          - pattern: |
+              f"{os.environ['HOME']}/.aws/credentials"
+          - pattern: |
+              f"{os.environ['HOME']}/.aws/config"
+          - pattern: |
+              f"{os.environ['HOME']}/.npmrc"
+          - pattern: |
+              f"{os.environ['HOME']}/.docker/config.json"
+          - pattern: |
+              f"{os.environ['HOME']}/.kube/config"
+          - pattern: |
+              f"{os.environ['HOME']}/.git-credentials"
+
+          # F-string patterns with os.environ.get
+          - pattern: |
+              f"{os.environ.get('HOME')}/.ssh/{$KEY}"
+          - pattern: |
+              f"{os.environ.get('HOME')}/.aws/credentials"
+
+          # String concatenation with os.environ
+          - pattern: |
+              os.environ['HOME'] + "/.ssh/" + $KEY
+          - pattern: |
+              os.environ['HOME'] + "/.aws/credentials"
+          - pattern: |
+              os.environ['HOME'] + "/.aws/config"
+          - pattern: |
+              os.environ.get('HOME') + "/.ssh/" + $KEY
+
+          # String format() method
+          - pattern: |
+              "{}/.ssh/{}".format(os.environ['HOME'], $KEY)
+          - pattern: |
+              "{}/.aws/credentials".format(os.environ['HOME'])
+          - pattern: |
+              "{home}/.ssh/{key}".format(home=os.environ['HOME'], ...)
+
+  - id: obfuscated-credential-path-join-python
+    message: os.path.join or Path with environment variables for credential paths - possible evasion
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # os.path.join with os.environ
+          - pattern: |
+              os.path.join(os.environ['HOME'], ".ssh", ...)
+          - pattern: |
+              os.path.join(os.environ['HOME'], ".aws", "credentials")
+          - pattern: |
+              os.path.join(os.environ['HOME'], ".aws", "config")
+          - pattern: |
+              os.path.join(os.environ.get('HOME'), ".ssh", ...)
+          - pattern: |
+              os.path.join(os.environ['HOME'], ".npmrc")
+          - pattern: |
+              os.path.join(os.environ['HOME'], ".docker", "config.json")
+          - pattern: |
+              os.path.join(os.environ['HOME'], ".kube", "config")
+          - pattern: |
+              os.path.join(os.environ['HOME'], ".git-credentials")
+
+          # Path() with os.environ
+          - pattern: |
+              Path(os.environ['HOME']) / ".ssh" / ...
+          - pattern: |
+              Path(os.environ['HOME']) / ".aws" / "credentials"
+          - pattern: |
+              Path(os.environ.get('HOME')) / ".ssh" / ...
+
+  - id: base64-encoded-credential-paths-python
+    message: Base64 decoding potentially obfuscating credential file paths
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: LOW
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Base64 decode followed by file operations
+          - pattern: |
+              $PATH = base64.b64decode($ENCODED).decode()
+              ...
+              open($PATH)
+          - pattern: |
+              $PATH = base64.b64decode($ENCODED).decode()
+              ...
+              open($PATH, ...)
+
+  - id: dynamic-getattr-credential-access-python
+    message: Dynamic getattr/getitem on os.environ for credentials - possible evasion
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: LOW
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Dynamic environment variable access
+          - pattern: |
+              os.environ[f"AWS_{$SUFFIX}"]
+          - pattern: |
+              os.environ[... + "SECRET"]
+          - pattern: |
+              os.environ[... + "TOKEN"]
+          - pattern: |
+              os.environ[... + "KEY"]
+          - pattern: |
+              os.getenv(f"AWS_{$SUFFIX}")
+
+  - id: string-split-join-credential-paths-python
+    message: String manipulation (split/join) constructing credential paths - possible evasion
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-522: Insufficiently Protected Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: LOW
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # List join for path construction
+          - pattern: |
+              "/".join([..., ".ssh", ...])
+          - pattern: |
+              "/".join([..., ".aws", "credentials"])
+          - pattern: |
+              os.sep.join([..., ".ssh", ...])
+          - pattern: |
+              os.path.sep.join([..., ".ssh", ...])

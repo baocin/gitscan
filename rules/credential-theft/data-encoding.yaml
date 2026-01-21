@@ -1,0 +1,291 @@
+rules:
+  - id: compression-before-exfil-js
+    message: Compressing data before network transmission - potential credential exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # zlib compression followed by network call
+          - pattern: |
+              $COMPRESSED = zlib.gzipSync($DATA)
+              ...
+              fetch($URL, ...)
+          - pattern: |
+              $COMPRESSED = zlib.deflateSync($DATA)
+              ...
+              fetch($URL, ...)
+          - pattern: |
+              zlib.gzip($DATA, ...)
+              ...
+              fetch($URL, ...)
+
+          # pako compression
+          - pattern: |
+              $COMPRESSED = pako.gzip($DATA)
+              ...
+              fetch($URL, ...)
+
+  - id: compression-before-exfil-python
+    message: Compressing data before network transmission - potential credential exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # gzip compression
+          - pattern: |
+              $COMPRESSED = gzip.compress($DATA)
+              ...
+              requests.post($URL, ...)
+          - pattern: |
+              $COMPRESSED = gzip.compress($DATA)
+              ...
+              urllib.request.urlopen($URL, ...)
+
+          # zlib compression
+          - pattern: |
+              $COMPRESSED = zlib.compress($DATA)
+              ...
+              requests.post($URL, ...)
+
+          # bz2 compression
+          - pattern: |
+              $COMPRESSED = bz2.compress($DATA)
+              ...
+              requests.post($URL, ...)
+
+  - id: compression-before-exfil-bash
+    message: Compressing files/data before network transmission - potential credential exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [bash, sh]
+    patterns:
+      - pattern-either:
+          # gzip with curl
+          - pattern: gzip ... | curl ...
+          - pattern: gzip ... > ... && curl ...
+
+          # tar with curl
+          - pattern: tar ... | curl ...
+          - pattern: tar -cz ... | curl ...
+          - pattern: tar -czf ... && curl ...
+
+          # zip with curl
+          - pattern: zip ... | curl ...
+          - pattern: zip ... && curl ...
+
+          # bzip2 with curl
+          - pattern: bzip2 ... | curl ...
+
+          # xz with curl
+          - pattern: xz ... | curl ...
+
+  - id: encryption-before-exfil-bash
+    message: Encrypting data before network transmission - potential obfuscated credential exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+    languages: [bash, sh]
+    patterns:
+      - pattern-either:
+          # openssl encryption with curl
+          - pattern: openssl ... | curl ...
+          - pattern: openssl enc ... | curl ...
+
+          # gpg encryption with curl
+          - pattern: gpg ... | curl ...
+          - pattern: gpg --encrypt ... | curl ...
+
+  - id: encryption-before-exfil-js
+    message: Encrypting data before network transmission - potential obfuscated credential exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # crypto encryption followed by network call
+          - pattern: |
+              $ENCRYPTED = crypto.encrypt($DATA, ...)
+              ...
+              fetch($URL, ...)
+          - pattern: |
+              $CIPHER = crypto.createCipher(...)
+              ...
+              $ENCRYPTED = $CIPHER.update($DATA, ...)
+              ...
+              fetch($URL, ...)
+
+          # CryptoJS
+          - pattern: |
+              $ENCRYPTED = CryptoJS.AES.encrypt($DATA, ...)
+              ...
+              fetch($URL, ...)
+
+  - id: encryption-before-exfil-python
+    message: Encrypting data before network transmission - potential obfuscated credential exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # cryptography library
+          - pattern: |
+              $ENCRYPTED = $CIPHER.encrypt($DATA)
+              ...
+              requests.post($URL, ...)
+
+          # PyCrypto/PyCryptodome
+          - pattern: |
+              $CIPHER = AES.new(...)
+              ...
+              $ENCRYPTED = $CIPHER.encrypt($DATA)
+              ...
+              requests.post($URL, ...)
+
+  - id: base64-encode-then-exfil-js
+    message: Base64 encoding followed by network transmission - potential credential exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Base64 encode then POST
+          - pattern: |
+              $ENCODED = Buffer.from($DATA).toString('base64')
+              ...
+              fetch($URL, { method: 'POST', ..., body: $ENCODED, ... })
+          - pattern: |
+              $ENCODED = btoa($DATA)
+              ...
+              fetch($URL, ...)
+          - pattern: |
+              $ENCODED = Buffer.from($DATA).toString('base64')
+              ...
+              axios.post($URL, $ENCODED)
+
+  - id: base64-encode-then-exfil-python
+    message: Base64 encoding followed by network transmission - potential credential exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Base64 encode then POST
+          - pattern: |
+              $ENCODED = base64.b64encode($DATA)
+              ...
+              requests.post($URL, ...)
+          - pattern: |
+              $ENCODED = base64.b64encode($DATA)
+              ...
+              urllib.request.urlopen($URL, data=$ENCODED)
+
+  - id: hex-encode-then-exfil
+    message: Hex encoding data before network transmission - potential credential exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # JavaScript hex encoding
+          - pattern: |
+              $ENCODED = Buffer.from($DATA).toString('hex')
+              ...
+              fetch($URL, ...)
+          - pattern: |
+              $ENCODED = $DATA.toString('hex')
+              ...
+              axios.post($URL, $ENCODED)
+
+          # Python hex encoding
+          - pattern: |
+              $ENCODED = $DATA.hex()
+              ...
+              requests.post($URL, ...)
+          - pattern: |
+              $ENCODED = binascii.hexlify($DATA)
+              ...
+              requests.post($URL, ...)
+
+  - id: json-stringify-credentials-then-exfil-js
+    message: JSON stringifying potentially sensitive data before network transmission
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Stringify process.env then send
+          - pattern: |
+              $DATA = JSON.stringify(process.env)
+              ...
+              fetch($URL, ...)
+          - pattern: |
+              $DATA = JSON.stringify(process.env, ...)
+              ...
+              axios.post($URL, $DATA)
+
+  - id: chunking-data-for-exfil
+    message: Splitting/chunking data potentially for stealthy exfiltration
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-201: Insertion of Sensitive Information Into Sent Data"
+      owasp: "A03:2021 - Injection"
+      confidence: LOW
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # JavaScript chunking with network calls in loop
+          - pattern: |
+              for (...) {
+                  ...
+                  $CHUNK = $DATA.slice(...)
+                  ...
+                  fetch($URL, ...)
+              }
+
+          # Python chunking
+          - pattern: |
+              for $CHUNK in ...:
+                  ...
+                  requests.post($URL, data=$CHUNK)

@@ -1,0 +1,226 @@
+rules:
+  - id: selective-aws-env-var-access-js
+    message: Accessing AWS-specific environment variables - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: HIGH
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # AWS credentials from env
+          - pattern: process.env.AWS_ACCESS_KEY_ID
+          - pattern: process.env.AWS_SECRET_ACCESS_KEY
+          - pattern: process.env.AWS_SESSION_TOKEN
+          - pattern: process.env.AWS_SECURITY_TOKEN
+          - pattern: process.env.AWS_CREDENTIAL_FILE
+
+  - id: selective-aws-env-var-access-python
+    message: Accessing AWS-specific environment variables - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: HIGH
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # AWS credentials from env
+          - pattern: os.environ['AWS_ACCESS_KEY_ID']
+          - pattern: os.environ['AWS_SECRET_ACCESS_KEY']
+          - pattern: os.environ['AWS_SESSION_TOKEN']
+          - pattern: os.environ['AWS_SECURITY_TOKEN']
+          - pattern: os.environ.get('AWS_ACCESS_KEY_ID')
+          - pattern: os.environ.get('AWS_SECRET_ACCESS_KEY')
+          - pattern: os.environ.get('AWS_SESSION_TOKEN')
+
+  - id: selective-secret-env-var-access-js
+    message: Accessing environment variables with SECRET/TOKEN/KEY in name - potential credential theft
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Generic secret patterns
+          - pattern: process.env["=~/.*SECRET.*/"]
+          - pattern: process.env["=~/.*TOKEN.*/"]
+          - pattern: process.env["=~/.*KEY.*/"]
+          - pattern: process.env["=~/.*PASSWORD.*/"]
+          - pattern: process.env["=~/.*CREDENTIAL.*/"]
+          - pattern: process.env["=~/.*API_KEY.*/"]
+          - pattern: process.env["=~/.*APIKEY.*/"]
+
+  - id: selective-secret-env-var-access-python
+    message: Accessing environment variables with SECRET/TOKEN/KEY in name - potential credential theft
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: MEDIUM
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Generic secret patterns
+          - pattern: os.environ["=~/.*SECRET.*/"]
+          - pattern: os.environ["=~/.*TOKEN.*/"]
+          - pattern: os.environ["=~/.*KEY.*/"]
+          - pattern: os.environ["=~/.*PASSWORD.*/"]
+          - pattern: os.environ["=~/.*CREDENTIAL.*/"]
+          - pattern: os.environ["=~/.*API_KEY.*/"]
+          - pattern: os.environ.get("=~/.*SECRET.*/")
+          - pattern: os.environ.get("=~/.*TOKEN.*/")
+          - pattern: os.environ.get("=~/.*KEY.*/")
+
+  - id: filtered-env-iteration-js
+    message: Filtering environment variables for secrets - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Filtering for secrets
+          - pattern: |
+              Object.keys(process.env).filter($K => $K.includes("SECRET"))
+          - pattern: |
+              Object.keys(process.env).filter($K => $K.includes("TOKEN"))
+          - pattern: |
+              Object.keys(process.env).filter($K => $K.includes("KEY"))
+          - pattern: |
+              Object.keys(process.env).filter($K => $K.includes("AWS"))
+          - pattern: |
+              Object.keys(process.env).filter($K => $K.includes("PASSWORD"))
+
+          # Mapping filtered keys
+          - pattern: |
+              Object.keys(process.env).filter(...).map($K => process.env[$K])
+
+  - id: filtered-env-iteration-python
+    message: Filtering environment variables for secrets - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: MEDIUM
+    languages: [python]
+    patterns:
+      - pattern-either:
+          # Dict comprehension filtering secrets
+          - pattern: |
+              {$K: $V for $K, $V in os.environ.items() if "SECRET" in $K}
+          - pattern: |
+              {$K: $V for $K, $V in os.environ.items() if "TOKEN" in $K}
+          - pattern: |
+              {$K: $V for $K, $V in os.environ.items() if "KEY" in $K}
+          - pattern: |
+              {$K: $V for $K, $V in os.environ.items() if "AWS" in $K}
+          - pattern: |
+              {$K: $V for $K, $V in os.environ.items() if "PASSWORD" in $K}
+
+          # List comprehension
+          - pattern: |
+              [$V for $K, $V in os.environ.items() if "SECRET" in $K]
+          - pattern: |
+              [$V for $K, $V in os.environ.items() if "TOKEN" in $K]
+
+  - id: spread-operator-env-access-js
+    message: Using spread operator on process.env - potential credential theft
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: MEDIUM
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          # Spread operator
+          - pattern: |
+              {...process.env}
+          - pattern: |
+              $OBJ = {...process.env, ...}
+          - pattern: |
+              Object.assign({}, process.env)
+          - pattern: |
+              Object.assign($TARGET, process.env)
+
+  - id: npm-token-env-access
+    message: Accessing NPM authentication token from environment - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: HIGH
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # NPM token - JavaScript
+          - pattern: process.env.NPM_TOKEN
+          - pattern: process.env.NPM_AUTH_TOKEN
+          - pattern: process.env["=~/.*NPM.*TOKEN.*/"]
+
+          # NPM token - Python
+          - pattern: os.environ['NPM_TOKEN']
+          - pattern: os.environ.get('NPM_TOKEN')
+          - pattern: os.environ['NPM_AUTH_TOKEN']
+
+  - id: github-token-env-access
+    message: Accessing GitHub token from environment - potential credential theft
+    severity: ERROR
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: HIGH
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # GitHub token - JavaScript
+          - pattern: process.env.GITHUB_TOKEN
+          - pattern: process.env.GH_TOKEN
+          - pattern: process.env.GITHUB_PAT
+
+          # GitHub token - Python
+          - pattern: os.environ['GITHUB_TOKEN']
+          - pattern: os.environ.get('GITHUB_TOKEN')
+          - pattern: os.environ['GH_TOKEN']
+
+  - id: database-credential-env-access
+    message: Accessing database credentials from environment - potential credential theft
+    severity: WARNING
+    metadata:
+      category: info-leak
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: MEDIUM
+    languages: [javascript, typescript, python]
+    patterns:
+      - pattern-either:
+          # Database URLs and credentials - JavaScript
+          - pattern: process.env.DATABASE_URL
+          - pattern: process.env.DB_PASSWORD
+          - pattern: process.env.POSTGRES_PASSWORD
+          - pattern: process.env.MYSQL_PASSWORD
+          - pattern: process.env.MONGO_URL
+          - pattern: process.env.MONGODB_URI
+          - pattern: process.env.REDIS_URL
+
+          # Database URLs and credentials - Python
+          - pattern: os.environ['DATABASE_URL']
+          - pattern: os.environ.get('DATABASE_URL')
+          - pattern: os.environ['DB_PASSWORD']
+          - pattern: os.environ['POSTGRES_PASSWORD']
+          - pattern: os.environ['MYSQL_PASSWORD']
