@@ -542,7 +542,7 @@
             </div>
 
             <div class="score-display">
-                <div class="score-circle {{if le .SecurityScore 20}}score-a{{else if le .SecurityScore 40}}score-b{{else if le .SecurityScore 60}}score-c{{else}}score-f{{end}}">
+                <div class="score-circle {{if ge .SecurityScore 80}}score-a{{else if ge .SecurityScore 60}}score-b{{else if ge .SecurityScore 40}}score-c{{else if ge .SecurityScore 20}}score-d{{else}}score-f{{end}}">
                     <span class="score-value">{{.SecurityScore}}</span>
                     <span class="score-grade">{{.SecurityGrade}}</span>
                 </div>
