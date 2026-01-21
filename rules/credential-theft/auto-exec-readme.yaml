@@ -48,11 +48,11 @@ rules:
     patterns:
       - pattern-either:
           # Running install scripts
-          - pattern-regex: '\./install\.sh'
-          - pattern-regex: 'bash install\.sh'
-          - pattern-regex: 'sh install\.sh'
-          - pattern-regex: '\./setup\.sh'
-          - pattern-regex: 'bash setup\.sh'
+          - pattern-regex: '(?<![Nn]o )\./install\.sh'
+          - pattern-regex: '(?<![Nn]o )bash install\.sh'
+          - pattern-regex: '(?<![Nn]o )sh install\.sh'
+          - pattern-regex: '(?<![Nn]o )\./setup\.sh'
+          - pattern-regex: '(?<![Nn]o )bash setup\.sh'
 
           # Running with sudo
           - pattern-regex: 'sudo \./install'
@@ -60,9 +60,9 @@ rules:
           - pattern-regex: 'sudo \./setup'
           - pattern-regex: 'sudo python setup\.py'
 
-          # Make commands
-          - pattern-regex: 'make install'
-          - pattern-regex: 'sudo make install'
+          # Make commands - only match as actual commands, not in prose
+          - pattern-regex: '(?:^|`|\$)\s*make install'
+          - pattern-regex: '(?:^|`|\$)\s*sudo make install'
 
   - id: dangerous-readme-npm-install
     message: README instructs npm install - verify package safety before executing
@@ -79,16 +79,14 @@ rules:
         - "README.txt"
     patterns:
       - pattern-either:
-          # npm with sudo
-          - pattern-regex: 'sudo npm install'
-          - pattern-regex: 'sudo npm i '
+          # npm with sudo - more dangerous
+          - pattern-regex: 'sudo\s+npm\s+(?:install|i)\b'
 
           # Global npm install (writes to system dirs)
-          - pattern-regex: 'npm install -g'
-          - pattern-regex: 'npm i -g'
+          - pattern-regex: 'npm\s+(?:install|i)\s+-g\b'
 
-          # Any npm install (informational)
-          - pattern-regex: 'npm install'
+          # Any npm install in command context (less noisy)
+          - pattern-regex: '(?:^|`|\$|\n)\s*npm\s+(?:install|i)\b'
 
   - id: dangerous-readme-pip-install
     message: README instructs running pip/python install commands - verify package source
