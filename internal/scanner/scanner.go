@@ -119,20 +119,20 @@ type Result struct {
 
 // RunRiskWeights defines risk points deducted per severity level
 // Score starts at 100 (perfect) and decreases with findings
+// Info-leak findings are tracked separately but scored by their severity level
 var RunRiskWeights = map[string]int{
-	"info-leak": 1,  // -1 point per info leak (immediate danger to cloner)
-	"critical":  5,  // -5 points per critical finding
-	"high":      3,  // -3 points per high finding
-	"medium":    2,  // -2 points per medium finding
-	"low":       1,  // -1 point per low finding
-	"info":      0,  // info findings don't affect score
+	"critical": 5, // -5 points per critical finding
+	"high":     3, // -3 points per high finding
+	"medium":   2, // -2 points per medium finding
+	"low":      1, // -1 point per low finding
+	"info":     0, // info findings don't affect score
 }
 
 // CalculateRunRisk computes a 0-100 run risk score based on findings
 // 100 = safe to run (no issues), 0 = extremely dangerous to execute
+// Note: Info-leak findings are counted by their severity level, not separately
 func CalculateRunRisk(infoLeak, critical, high, medium, low int) int {
 	score := 100
-	score -= infoLeak * RunRiskWeights["info-leak"]
 	score -= critical * RunRiskWeights["critical"]
 	score -= high * RunRiskWeights["high"]
 	score -= medium * RunRiskWeights["medium"]
