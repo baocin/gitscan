@@ -738,9 +738,13 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 	report.WriteBoxMiddle(width)
 	var summaryLine string
 	if h.scanner.IsInfoLeakOnly() {
-		// Info-leak only mode: show only info-leak count
-		summaryLine = fmt.Sprintf("%s %d Info Leak (credential theft detection only)",
-			sb.Color(Magenta, IconInfoLeak), scan.InfoLeakCount)
+		// Info-leak only mode: show severity breakdown of credential theft findings
+		summaryLine = fmt.Sprintf("%s %d Critical    %s %d High    %s %d Medium    %s %d Low",
+			sb.Color(Red, IconCritical), scan.CriticalCount,
+			sb.Color(Yellow, IconHigh), scan.HighCount,
+			sb.Color(Blue, IconMedium), scan.MediumCount,
+			IconLow, scan.LowCount,
+		)
 	} else {
 		// Full scan mode: show all severity counts
 		summaryLine = fmt.Sprintf("%s %d Info Leak    %s %d Critical    %s %d High    %s %d Medium    %s %d Low",
