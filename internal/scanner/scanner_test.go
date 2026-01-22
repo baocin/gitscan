@@ -97,7 +97,7 @@ const sampleSARIF = `{
 }`
 
 func TestParseSARIFOutput(t *testing.T) {
-	result, err := parseSARIFOutput(sampleSARIF, "", 100, time.Now(), false)
+	result, err := parseSARIFOutput(sampleSARIF, "", 100, time.Now(), false, nil)
 	if err != nil {
 		t.Fatalf("Failed to parse SARIF output: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestParseSARIFOutput(t *testing.T) {
 }
 
 func TestParseSARIFOutputEmpty(t *testing.T) {
-	result, err := parseSARIFOutput("", "", 50, time.Now(), false)
+	result, err := parseSARIFOutput("", "", 50, time.Now(), false, nil)
 	if err != nil {
 		t.Fatalf("Failed to parse empty SARIF: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestParseSARIFOutputNoResults(t *testing.T) {
 		"runs": [{"tool": {"driver": {"name": "opengrep"}}, "results": []}]
 	}`
 
-	result, err := parseSARIFOutput(noResultsSARIF, "", 25, time.Now(), false)
+	result, err := parseSARIFOutput(noResultsSARIF, "", 25, time.Now(), false, nil)
 	if err != nil {
 		t.Fatalf("Failed to parse SARIF with no results: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestNormalizeSeverity(t *testing.T) {
 func TestFindingsJSONCanBeUnmarshaledAsArray(t *testing.T) {
 	// This test verifies the fix for the bug where SARIF was stored directly
 	// but handlers expected []Finding format
-	result, err := parseSARIFOutput(sampleSARIF, "", 100, time.Now(), false)
+	result, err := parseSARIFOutput(sampleSARIF, "", 100, time.Now(), false, nil)
 	if err != nil {
 		t.Fatalf("Failed to parse SARIF: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestRiskGrade(t *testing.T) {
 
 func TestSecurityScoreInParsedResult(t *testing.T) {
 	// Verify security score is calculated during SARIF parsing
-	result, err := parseSARIFOutput(sampleSARIF, "", 100, time.Now(), false)
+	result, err := parseSARIFOutput(sampleSARIF, "", 100, time.Now(), false, nil)
 	if err != nil {
 		t.Fatalf("Failed to parse SARIF: %v", err)
 	}

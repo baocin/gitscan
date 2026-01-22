@@ -196,6 +196,9 @@ func main() {
 	// Static files
 	mux.HandleFunc("/static/", webHandler.ServeStatic)
 
+	// Robots.txt for crawler guidance
+	mux.HandleFunc("/robots.txt", serveRobotsTxt)
+
 	// Web pages
 	mux.HandleFunc("/pricing", webHandler.ServePricing)
 	mux.HandleFunc("/pricing/", func(w http.ResponseWriter, r *http.Request) {
@@ -580,12 +583,13 @@ func logRequest(next http.Handler) http.Handler {
 
 		next.ServeHTTP(wrapped, r)
 
-		log.Printf("%s %s %s %d %v",
+		log.Printf("%s %s %s %d %v [%s]",
 			r.Method,
 			r.URL.Path,
 			r.RemoteAddr,
 			wrapped.statusCode,
 			time.Since(start),
+			r.UserAgent(),
 		)
 	})
 }
@@ -599,4 +603,36 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// serveRobotsTxt serves the robots.txt file to guide web crawlers
+func serveRobotsTxt(w http.ResponseWriter, r *http.Request) {
+	robotsTxt := `User-agent: *
+# Allow indexing of public pages
+Allow: /$
+Allow: /docs
+Allow: /pricing
+Allow: /stats
+
+# Disallow crawling of dynamic content and reports
+Disallow: /r/
+Disallow: /reports/
+Disallow: /github.com/
+Disallow: /gitlab.com/
+Disallow: /bitbucket.org/
+Disallow: /scan/
+Disallow: /clone/
+Disallow: /json/
+Disallow: /plain/
+Disallow: /metrics
+
+# Crawl delay to be respectful
+Crawl-delay: 2
+
+# Sitemap (optional, for future use)
+# Sitemap: https://git.vet/sitemap.xml
+`
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(robotsTxt))
 }

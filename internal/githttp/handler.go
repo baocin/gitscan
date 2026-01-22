@@ -483,7 +483,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 			if parsed.Mode == "json" {
 				h.writeJSONReport(sb, parsed, repo, cachedScan)
 			} else {
-				h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true)
+				h.writeScanReport(sb, report, parsed, repo, cachedScan, boxWidth, true, nil)
 			}
 
 			// Log cache hit request
@@ -524,13 +524,45 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 	sb.WriteProgressf("%s [git.vet] Scanning for vulnerabilities...", SpinnerFrames[frame%len(SpinnerFrames)])
 
 	scanStart := time.Now()
+	streamedFindings := make(map[string]bool) // Track findings we've already shown
 	scanResult, err := h.scanner.Scan(ctx, repo.LocalPath, func(progress scanner.Progress) {
 		// Check for disconnect during scan
 		if checkClientDisconnected(ctx) {
 			return
 		}
-		frame++
-		sb.WriteProgressf("%s [git.vet] Scanning for vulnerabilities...", SpinnerFrames[frame%len(SpinnerFrames)])
+
+		// Stream new findings in real-time as they're discovered
+		if progress.NewFinding != nil {
+			f := progress.NewFinding
+			findingKey := fmt.Sprintf("%s:%s:%d", f.RuleID, f.Path, f.StartLine)
+
+			// Only show if we haven't streamed this finding yet
+			if !streamedFindings[findingKey] {
+				streamedFindings[findingKey] = true
+
+				severityIcon := getSeverityIcon(sb, f.Severity)
+				severityLabel := strings.ToUpper(f.Severity)
+				shortRule := shortenRuleID(f.RuleID)
+
+				// Format: ⚠ HIGH: rule-name
+				sb.WriteProgress(fmt.Sprintf("%s %s: %s", severityIcon, severityLabel, shortRule))
+
+				// Show path with line number (indented)
+				pathWithLine := fmt.Sprintf("  %s:%d", f.Path, f.StartLine)
+				sb.WriteProgress(shortenPath(pathWithLine, boxWidth-2))
+
+				// Show message (indented)
+				msg := fmt.Sprintf("  %s", f.Message)
+				if len(msg) > boxWidth-2 {
+					msg = msg[:boxWidth-5] + "..."
+				}
+				sb.WriteProgress(msg)
+			}
+		} else {
+			// Regular progress update (spinner)
+			frame++
+			sb.WriteProgressf("%s [git.vet] Scanning for vulnerabilities...", SpinnerFrames[frame%len(SpinnerFrames)])
+		}
 	})
 	scanDuration := time.Since(scanStart)
 
@@ -607,7 +639,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 	if parsed.Mode == "json" {
 		h.writeJSONReport(sb, parsed, repo, dbScan)
 	} else {
-		h.writeScanReport(sb, report, parsed, repo, dbScan, boxWidth, false)
+		h.writeScanReport(sb, report, parsed, repo, dbScan, boxWidth, false, streamedFindings)
 	}
 
 	// Log request
@@ -632,7 +664,7 @@ func (h *Handler) performScan(ctx context.Context, sb *SidebandWriter, r *http.R
 }
 
 // writeScanReport writes the formatted scan report via sideband
-func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, parsed *ParsedPath, repo *cache.CachedRepo, scan *db.Scan, width int, cacheHit bool) {
+func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, parsed *ParsedPath, repo *cache.CachedRepo, scan *db.Scan, width int, cacheHit bool, streamedFindings map[string]bool) {
 	sb.WriteEmptyLine()
 
 	// Show findings first (if any) so they appear before the summary
@@ -645,7 +677,16 @@ func (h *Handler) writeScanReport(sb *SidebandWriter, report *ReportWriter, pars
 			sortedFindings := SortFindingsBySeverity(findings)
 
 			// Show findings without box (cleaner look)
+			// Skip findings that were already streamed in real-time
 			for _, f := range sortedFindings {
+				// Check if this finding was already streamed
+				if streamedFindings != nil {
+					findingKey := fmt.Sprintf("%s:%s:%d", f.RuleID, f.Path, f.StartLine)
+					if streamedFindings[findingKey] {
+						continue // Skip already-streamed finding
+					}
+				}
+
 				severityIcon := getSeverityIcon(sb, f.Severity)
 				severityLabel := strings.ToUpper(f.Severity)
 				shortRule := shortenRuleID(f.RuleID)

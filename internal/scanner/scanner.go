@@ -91,6 +91,7 @@ type Progress struct {
 	FilesScanned int
 	FilesTotal   int
 	Percent      int
+	NewFinding   *Finding // If non-nil, a new finding was discovered
 }
 
 // ProgressFunc is a callback for progress updates
@@ -416,7 +417,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 		log.Printf("[scanner] Scan timed out after %v, attempting to parse partial results...", s.timeout)
 
 		if len(jsonOutput.String()) > 0 {
-			partialResult, parseErr := parseSARIFOutput(jsonOutput.String(), repoPath, totalFiles, startTime, s.infoLeakOnly)
+			partialResult, parseErr := parseSARIFOutput(jsonOutput.String(), repoPath, totalFiles, startTime, s.infoLeakOnly, progressFn)
 			if parseErr == nil && len(partialResult.Findings) > 0 {
 				// We got partial results! Return them with warning
 				partialResult.ScannerUsed = s.binaryPath
@@ -448,7 +449,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 				// (exit code 2 may be from cleanup/version check failures)
 				if stdoutStr != "" && strings.HasPrefix(stdoutStr, "{") {
 					// We have JSON output, try to parse it
-					if _, parseErr := parseSARIFOutput(stdoutStr, repoPath, totalFiles, startTime, s.infoLeakOnly); parseErr == nil {
+					if _, parseErr := parseSARIFOutput(stdoutStr, repoPath, totalFiles, startTime, s.infoLeakOnly, nil); parseErr == nil {
 						// Valid SARIF! Scan succeeded despite exit code 2
 						log.Printf("[scanner] Exit code 2 but valid SARIF output present, treating as success")
 						err = nil // Clear the error, proceed with normal parsing
@@ -494,7 +495,7 @@ func (s *Scanner) Scan(ctx context.Context, repoPath string, progressFn Progress
 		log.Printf("[scanner] Raw output (first 500 chars): %s", jsonOutput.String()[:500])
 	}
 
-	result, err := parseSARIFOutput(jsonOutput.String(), repoPath, totalFiles, startTime, s.infoLeakOnly)
+	result, err := parseSARIFOutput(jsonOutput.String(), repoPath, totalFiles, startTime, s.infoLeakOnly, progressFn)
 	if err != nil {
 		log.Printf("[scanner] SARIF parse error: %v", err)
 		// If parsing fails, return basic result with empty findings
@@ -530,7 +531,7 @@ func (s *Scanner) mockScan(repoPath string, totalFiles int, startTime time.Time)
 }
 
 // parseSARIFOutput parses SARIF JSON output from opengrep
-func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime time.Time, infoLeakOnly bool) (*Result, error) {
+func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime time.Time, infoLeakOnly bool, progressFn ProgressFunc) (*Result, error) {
 	if jsonStr == "" {
 		return &Result{
 			FilesScanned: totalFiles,
@@ -585,6 +586,16 @@ func parseSARIFOutput(jsonStr string, repoPath string, totalFiles int, startTime
 			}
 
 			result.Findings = append(result.Findings, finding)
+
+			// Stream finding in real-time if callback provided
+			if progressFn != nil {
+				progressFn(Progress{
+					FilesScanned: totalFiles,
+					FilesTotal:   totalFiles,
+					Percent:      100,
+					NewFinding:   &finding,
+				})
+			}
 
 			// Count by severity
 			switch finding.Severity {
